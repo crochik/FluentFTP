@@ -7,7 +7,7 @@ using System.Threading;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Linq;
-#if !NOASYNC
+#if ASYNC
 using System.Threading.Tasks;
 #endif
 using System.IO.Compression;
@@ -15,6 +15,7 @@ using System.Text;
 using FluentFTP.Proxy;
 using System.Security.Authentication;
 using Xunit;
+using FluentFTP.Helpers;
 
 namespace Tests {
 	public class Tests {
@@ -26,6 +27,9 @@ namespace Tests {
 		private const string m_host = "";
 		private const string m_user = "";
 		private const string m_pass = "";
+
+		private const string m_proxy_host = "";
+		private const int m_proxy_port = 0;
 
 		private static readonly int[] connectionTypes = new[] {
 			(int) FtpDataConnectionType.EPSV,
@@ -99,7 +103,7 @@ namespace Tests {
 			}
 		}
 
-#if !NOASYNC
+#if ASYNC
 		//[Fact]
 		public async Task TestListPathAsync() {
 			using (var cl = NewFtpClient()) {
@@ -138,7 +142,7 @@ namespace Tests {
 			}
 		}
 
-#if !NOASYNC
+#if ASYNC
 		//[Fact]
 		public async Task StreamResponsesAsync() {
 			using (var cl = NewFtpClient()) {
@@ -205,7 +209,7 @@ namespace Tests {
 			}
 		}
 
-#if !NOASYNC && !CORE
+#if ASYNC && !CORE
 		//[Fact]
 		public async Task TestGetObjectInfoAsync() {
 			using (var cl = NewFtpClient()) {
@@ -273,7 +277,7 @@ namespace Tests {
 			}
 		}
 
-#if !NOASYNC
+#if ASYNC
 		private async Task TestServerDownloadAsync(FtpClient client, string path) {
 			foreach (var i in await client.GetListingAsync(path)) {
 				switch (i.Type) {
@@ -339,7 +343,7 @@ namespace Tests {
 			}
 			catch (System.Net.Sockets.SocketException) {
 			} // Expecting this
-#if !NOASYNC
+#if ASYNC
 			catch (AggregateException ex) when (ex.InnerException is System.Net.Sockets.SocketException) {
 			}
 
@@ -375,12 +379,80 @@ namespace Tests {
 		[Trait("Category", Category_PublicFTP)]
 		public void TestGetListingBSDServer() {
 			using (var client = NewFtpClient_NetBsd()) {
+				client.Connect();
 
 				// machine listing
 				var listing = client.GetListing();
 
 				// unix listing
 				var listing2 = client.GetListing("/", FtpListOption.ForceList);
+			}
+		}
+
+#if ASYNC
+		[Fact]
+		[Trait("Category", Category_PublicFTP)]
+		public async void TestGetListingBSDServerAsync() {
+			using (var client = NewFtpClient_NetBsd()) {
+
+				// machine listing
+				var listing = await client.GetListingAsync();
+
+				// unix listing
+				var listing2 = await client.GetListingAsync("/", FtpListOption.ForceList);
+			}
+		}
+#endif
+
+		[Fact]
+		[Trait("Category", Category_PublicFTP)]
+		// FIX : #768 NullOrEmpty is valid, means "use working directory".
+		public void TestGetListingWorkingDirectoryBsdServer() {
+			using (var client = NewFtpClient_NetBsd()) {
+				// Setup
+				client.Connect();
+
+				const string directoryNetBsdName = "NetBSD";
+				const string directoryPubName = "pub";
+				var directoryPubNameFull = $"/{directoryPubName}";
+				var directoryNetBsdNameFull = $"{directoryPubNameFull}/{directoryNetBsdName}";
+
+				// Act
+				client.SetWorkingDirectory(directoryPubName);
+				var resultGetListing = client.GetListing();
+				//todo test GetListingAsync()
+				//var resultGetListingAsync = await client.GetListingAsync();
+				var resultGetNameListing = client.GetNameListing();
+				//todo test GetNameListingAsync()
+				//var resultGetNameListingAsync = await client.GetNameListingAsync();
+
+				// Check helper
+				void CheckListing(string methodName, IList<string> list) {
+					var directoryNetBsdFound = false;
+					var directoryPubFound = false;
+					foreach (var item in list) {
+						if (item.Equals(directoryNetBsdNameFull, StringComparison.OrdinalIgnoreCase))
+							directoryNetBsdFound = true;
+						if (item.Equals(directoryPubNameFull, StringComparison.OrdinalIgnoreCase))
+							directoryPubFound = true;
+					}
+
+					if (!directoryNetBsdFound)
+						throw new Exception($"Did not find expected directory: '{directoryNetBsdNameFull}' using {methodName}.");
+					if (directoryPubFound)
+						throw new Exception($"Found unexpected directory '{directoryPubNameFull}' using {methodName}.");
+				}
+
+				// Check
+				var resultGetListingNames = new List<string>();
+				foreach (var item in resultGetListing)
+					resultGetListingNames.Add(item.FullName);
+				CheckListing("GetListing", resultGetListingNames);
+				//todo test GetListingAsync()
+				//CheckListing("GetListingAsync", resultGetListingAsync);
+				CheckListing("GetNameListing", resultGetNameListing);
+				//todo test GetNameListingAsync()
+				//CheckListing("GetNameListingAsync", resultGetNameListingAsync);
 			}
 		}
 
@@ -396,6 +468,63 @@ namespace Tests {
 				var listing2 = client.GetListing("/", FtpListOption.ForceList);
 			}
 		}
+
+		[Fact]
+		[Trait("Category", Category_PublicFTP)]
+		public void TestConnectVariousModes() {
+
+			try {
+				// Implicit TLS
+				FtpClient client = NewFtpClient_Tele2SpeedTest();
+				client.EncryptionMode = FtpEncryptionMode.Implicit;
+				client.Connect();
+			}
+			catch (Exception ex) {
+			}
+
+			try {
+				// Implicit TLS
+				FtpClient client = NewFtpClient_NetBsd();
+				client.EncryptionMode = FtpEncryptionMode.Implicit;
+				client.Connect();
+			}
+			catch (Exception ex) {
+			}
+
+			try {
+				// Explicit SSL
+				FtpClient client = NewFtpClient_Tele2SpeedTest();
+				client.EncryptionMode = FtpEncryptionMode.Explicit;
+				client.Connect();
+			}
+			catch (Exception ex) {
+			}
+
+			try {
+				// Explicit SSL
+				FtpClient client = NewFtpClient_NetBsd();
+				client.EncryptionMode = FtpEncryptionMode.Explicit;
+				client.Connect();
+			}
+			catch (Exception ex) {
+			}
+
+		}
+
+#if ASYNC
+		[Fact]
+		[Trait("Category", Category_PublicFTP)]
+		public async void TestGetListingTeleServerAsync() {
+			using (var client = NewFtpClient_Tele2SpeedTest()) {
+
+				// machine listing
+				var listing = await client.GetListingAsync();
+
+				// unix listing
+				var listing2 = await client.GetListingAsync("/", FtpListOption.ForceList);
+			}
+		}
+#endif
 
 		[Fact]
 		[Trait("Category", Category_PublicFTP)]
@@ -608,8 +737,8 @@ namespace Tests {
 		}
 
 		//[Fact]
-		public void TestHash() {
-			using (var cl = NewFtpClient()) {
+		//public void TestHash() {
+			/*using (var cl = NewFtpClient()) {
 				cl.Connect();
 
 				FtpTrace.WriteLine("Supported HASH algorithms: " + cl.HashAlgorithms);
@@ -627,13 +756,13 @@ namespace Tests {
 						}
 					}
 				}
-			}
-		}
+			}*/
+		//}
 
-#if !NOASYNC
+#if ASYNC
 		//[Fact]
-		public async Task TestHashAsync() {
-			using (var cl = NewFtpClient()) {
+		//public async Task TestHashAsync() {
+			/*using (var cl = NewFtpClient()) {
 				await cl.ConnectAsync();
 
 				FtpTrace.WriteLine("Supported HASH algorithms: " + cl.HashAlgorithms);
@@ -644,15 +773,15 @@ namespace Tests {
 						FtpHash hash = null;
 
 						await cl.SetHashAlgorithmAsync(alg);
-						hash = await cl.GetHashAsync("LICENSE.TXT");
+						hash = await cl.HashCommandInternalAsync("LICENSE.TXT");
 
 						if (hash.IsValid) {
 							Debug.Assert(hash.Verify(@"C:\FTPTEST\LICENSE.TXT"), "The computed hash didn't match or the hash object was invalid!");
 						}
 					}
 				}
-			}
-		}
+			}*/
+		//}
 #endif
 
 		//[Fact]
@@ -822,9 +951,9 @@ namespace Tests {
 					ostream.Write(buf, 0, read);
 				}
 
-				if (cl.HashAlgorithms != FtpHashAlgorithm.NONE) {
+				/*if (cl.HashAlgorithms != FtpHashAlgorithm.NONE) {
 					Debug.Assert(cl.GetHash(s.Replace(root, "")).Verify(s), "The computed hashes don't match!");
-				}
+				}*/
 			}
 
 			/*if (!cl.GetHash(s.Replace(root, "")).Verify(s))
@@ -928,7 +1057,7 @@ namespace Tests {
 			}
 		}
 
-#if !NOASYNC
+#if ASYNC
 		//[Fact]
 		public async Task TestUploadDownloadFileAsync() {
 			using (var cl = NewFtpClient()) {
@@ -1003,7 +1132,7 @@ namespace Tests {
 			}
 		}
 
-#if !NOASYNC
+#if ASYNC
 		//[Fact]
 		public async Task TestUploadDownloadManyFilesAsync() {
 			using (var cl = NewFtpClient()) {
@@ -1037,7 +1166,7 @@ namespace Tests {
 				cl.UploadFiles(new[] {@"D:\Drivers\test\file0.exe", @"D:\Drivers\test\file1.exe", @"D:\Drivers\test\file2.exe", @"D:\Drivers\test\file3.exe", @"D:\Drivers\test\file4.exe"}, "/public_html/temp/", FtpRemoteExists.Skip);
 
 				// download many
-				cl.DownloadFiles(@"D:\Drivers\test\", new[] {@"/public_html/temp/file0.exe", @"/public_html/temp/file1.exe", @"/public_html/temp/file2.exe", @"/public_html/temp/file3.exe", @"/public_html/temp/file4.exe"}, FtpLocalExists.Append);
+				cl.DownloadFiles(@"D:\Drivers\test\", new[] {@"/public_html/temp/file0.exe", @"/public_html/temp/file1.exe", @"/public_html/temp/file2.exe", @"/public_html/temp/file3.exe", @"/public_html/temp/file4.exe"}, FtpLocalExists.Resume);
 
 				FtpTrace.WriteLine(" ------------- ALL DONE! ------------------");
 
@@ -1045,7 +1174,7 @@ namespace Tests {
 			}
 		}
 
-#if !NOASYNC
+#if ASYNC
 		//[Fact]
 		public async Task TestUploadDownloadManyFiles2Async() {
 			using (var cl = NewFtpClient()) {
@@ -1056,7 +1185,7 @@ namespace Tests {
 				await cl.UploadFilesAsync(new[] {@"D:\Drivers\test\file0.exe", @"D:\Drivers\test\file1.exe", @"D:\Drivers\test\file2.exe", @"D:\Drivers\test\file3.exe", @"D:\Drivers\test\file4.exe"}, "/public_html/temp/", createRemoteDir: false);
 
 				// download many
-				await cl.DownloadFilesAsync(@"D:\Drivers\test\", new[] {@"/public_html/temp/file0.exe", @"/public_html/temp/file1.exe", @"/public_html/temp/file2.exe", @"/public_html/temp/file3.exe", @"/public_html/temp/file4.exe"}, FtpLocalExists.Append);
+				await cl.DownloadFilesAsync(@"D:\Drivers\test\", new[] {@"/public_html/temp/file0.exe", @"/public_html/temp/file1.exe", @"/public_html/temp/file2.exe", @"/public_html/temp/file3.exe", @"/public_html/temp/file4.exe"}, FtpLocalExists.Resume);
 
 				FtpTrace.WriteLine(" ------------- ALL DONE! ------------------");
 
@@ -1159,15 +1288,54 @@ namespace Tests {
 				var profile = cl.AutoConnect();
 				if (profile != null) {
 					var code = profile.ToCode();
+					Console.WriteLine(code);
 				}
 			}
-			using (var cl = NewFtpClient_Inacessible()) {
+			/*using (var cl = NewFtpClient_Inacessible()) {
 				var profile = cl.AutoConnect();
 			}
 			using (var cl = NewFtpClient_Inacessible2()) {
 				var profile = cl.AutoConnect();
+			}*/
+		}
+
+		[Fact]
+		public void TestSocksProxy()
+		{
+			using (var cl = new FtpClientSocks5Proxy(new ProxyInfo()
+			{
+				Credentials = null,
+				Host = m_proxy_host,
+				Port = m_proxy_port
+			})
+			{
+				Host = m_host,
+				Credentials = new NetworkCredential(m_user, m_pass)
+			})
+			{
+				var items = cl.GetListing("/");
+				Console.WriteLine(items.Length);
 			}
 		}
+
+#if ASYNC
+		[Fact]
+		public async void TestAutoConnectAsync() {
+			using (var cl = NewFtpClient_Tele2SpeedTest()) {
+				var profile = await cl.AutoConnectAsync();
+				if (profile != null) {
+					var code = profile.ToCode();
+					Console.WriteLine(code);
+				}
+			}
+			/*using (var cl = NewFtpClient_Inacessible()) {
+				var profile = await cl.AutoConnectAsync();
+			}
+			using (var cl = NewFtpClient_Inacessible2()) {
+				var profile = await cl.AutoConnectAsync();
+			}*/
+		}
+#endif
 
 		//[Fact]
 		public void TestQuickDownloadFilePublic() {

@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 #endif
+using FluentFTP.Helpers;
 
 namespace FluentFTP {
 	public partial class FtpClient : IDisposable {
@@ -65,7 +66,7 @@ namespace FluentFTP {
 
 			try {
 				if (SupportsChecksum()) {
-					FtpHash hash = await GetChecksumAsync(remotePath, token);
+					FtpHash hash = await GetChecksumAsync(remotePath, FtpHashAlgorithm.NONE, token);
 					if (!hash.IsValid) {
 						return false;
 					}

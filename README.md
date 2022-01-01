@@ -4,7 +4,7 @@
 [![Version](https://img.shields.io/nuget/vpre/FluentFTP.svg)](https://www.nuget.org/packages/FluentFTP)
 [![Downloads](https://img.shields.io/nuget/dt/FluentFTP.svg)](https://www.nuget.org/packages/FluentFTP)
 [![GitHub contributors](https://img.shields.io/github/contributors/robinrodricks/FluentFTP.svg)](https://github.com/robinrodricks/FluentFTP/graphs/contributors)
-[![Codacy grade](https://img.shields.io/codacy/grade/2d6bb3604aae4c1e892a8386363a5bfc.svg)](https://app.codacy.com/project/robinrodricks/FluentFTP/dashboard)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/8bc33aa55cb8494da3a7a07dba5316f7)](https://www.codacy.com/gh/robinrodricks/FluentFTP/dashboard)
 [![License](https://img.shields.io/github/license/robinrodricks/FluentFTP.svg)](https://github.com/robinrodricks/FluentFTP/blob/master/LICENSE.TXT)
 
 FluentFTP is a fully managed FTP and FTPS library for .NET & .NET Standard, optimized for speed. It provides extensive FTP commands, File uploads/downloads, SSL/TLS connections, Automatic directory listing parsing, File hashing/checksums, File permissions/CHMOD, FTP proxies, FXP transfers, UTF-8 support, Async/await support, Powershell support and more.
@@ -16,9 +16,9 @@ It is written entirely in C#, with no external dependencies. FluentFTP is releas
 
 ## Features
 
-  - Full support for [FTP](https://github.com/robinrodricks/FluentFTP/wiki/FTP-Support), [FXP](https://github.com/robinrodricks/FluentFTP/wiki/FXP-Server-To-Server#how-does-fxp-transfer-work), [FTPS](https://github.com/robinrodricks/FluentFTP/wiki/FTPS-Connection#faq_ftps) (FTP over SSL), [FTPS with client certificates](https://github.com/robinrodricks/FluentFTP/wiki/FTPS-Connection#faq_certs) and [FTPS with CCC](https://github.com/robinrodricks/FluentFTP/wiki/FTPS-Connection#faq_ccc) (for FTP firewalls)
+  - Full support for [FTP](https://github.com/robinrodricks/FluentFTP/wiki/FTP-Support), [FXP](https://github.com/robinrodricks/FluentFTP/wiki/FXP-Server-To-Server#how-does-fxp-transfer-work), [FTPS](https://github.com/robinrodricks/FluentFTP/wiki/FTP-Connection#faq_ftps) (FTP over SSL), [FTPS with client certificates](https://github.com/robinrodricks/FluentFTP/wiki/FTP-Connection#faq_certs) and [FTPS with CCC](https://github.com/robinrodricks/FluentFTP/wiki/FTP-Connection#faq_ccc) (for FTP firewalls)
   - **File management:**
-    - File and directory listing for [all major server types](https://github.com/robinrodricks/FluentFTP/wiki/Directory-Listing#faq_listings) (Unix, Windows/IIS, Azure, Pure-FTPd, ProFTPD, Vax, VMS, OpenVMS, Tandem, HP NonStop Guardian, IBM OS/400, AS400, Windows CE, Serv-U, etc)
+    - File and directory listing for [all major server types](https://github.com/robinrodricks/FluentFTP/wiki/Directory-Listing#faq_listings) (Unix, Windows/IIS, Azure, Pure-FTPd, ProFTPD, Vax, VMS, OpenVMS, Tandem, HP NonStop Guardian, [IBM z/OS and OS/400](https://github.com/robinrodricks/FluentFTP/wiki/IBM-zOS-and-OS-400-Support), Windows CE, Serv-U, etc)
 	- Fully recursive directory listing and directory deletion (manual recursion and server-side recursion)
     - Easily upload and download a file from the server with [progress tracking](https://github.com/robinrodricks/FluentFTP/wiki/File-Transfer#how-can-i-track-the-progress-of-file-transfers)
     - Easily upload and download a directory from the server with [easy synchronization modes](https://github.com/robinrodricks/FluentFTP/wiki/Directory-Transfer#what-is-the-difference-between-the-mirror-and-update-modes)
@@ -36,19 +36,20 @@ It is written entirely in C#, with no external dependencies. FluentFTP is releas
     - Dereference of symbolic links to calculate the linked file/folder
 	- [Throttling](https://github.com/robinrodricks/FluentFTP/wiki/File-Transfer#faq_throttle) of uploads and downloads with configurable speed limit
   - **FTP protocol:**
-    - Automatic detection of [working connection settings](https://github.com/robinrodricks/FluentFTP/wiki/Automatic-Connection#faq_autodetect) and automatic [connection negotiation](https://github.com/robinrodricks/FluentFTP/wiki/Automatic-Connection#faq_autoconnect)
-    - Automatic detection of the [FTP server software](https://github.com/robinrodricks/FluentFTP/wiki/Server-Information#faq_servertype) and its [capabilities](https://github.com/robinrodricks/FluentFTP/wiki/Directory-Listing#faq_recursivelist)
+    - Automatic [FTP/FTPS connection negotiation](https://github.com/robinrodricks/FluentFTP/wiki/Automatic-Connection#faq_autoconnect) and detection of [working connection settings](https://github.com/robinrodricks/FluentFTP/wiki/Automatic-Connection#faq_autodetect)
+    - Automatic detection of the [FTP server software](https://github.com/robinrodricks/FluentFTP/wiki/Server-Information#faq_servertype) and its [capabilities](https://github.com/robinrodricks/FluentFTP/wiki/Server-Information#faq_serverspecific)
     - Extensive support for [FTP commands](https://github.com/robinrodricks/FluentFTP/wiki/FTP-Support), including some server-specific commands
     - Easily send [server-specific](https://github.com/robinrodricks/FluentFTP/issues/88) FTP commands using the `Execute()` method
-    - Explicit and Implicit [SSL connections](https://github.com/robinrodricks/FluentFTP/wiki/FTPS-Connection#faq_ftps) are supported for the control and data connections using .NET's `SslStream`
+    - Explicit and Implicit [SSL connections](https://github.com/robinrodricks/FluentFTP/wiki/FTP-Connection#faq_ftps) are supported for the control and data connections using .NET's `SslStream`
     - Passive and active data connections (PASV, EPSV, PORT and EPRT)
     - Supports Unix CHMOD, PRET, ProFTPD's SITE MKDIR and RMDIR commands, Serv-U's RMDA command
-    - Supports [FTP Proxies](https://github.com/robinrodricks/FluentFTP/wiki/FTPS-Proxies#faq_loginproxy) (User@Host, HTTP 1.1, BlueCoat)
+    - Supports Realm and directory navigation for [IBM z/OS and OS/400](https://github.com/robinrodricks/FluentFTP/wiki/IBM-zOS-and-OS-400-Support)
+    - Supports all types of FTP Proxies ([HTTP 1.1](https://github.com/robinrodricks/FluentFTP/wiki/FTPS-Proxies#faq_loginproxy), [SOCKS5](https://github.com/robinrodricks/FluentFTP/wiki/FTPS-Proxies#faq_loginsocksproxy), User@Host, BlueCoat)
     - [FTP command logging](https://github.com/robinrodricks/FluentFTP/wiki/Logging#faq_log) using `TraceListeners` (passwords omitted) to [trace](https://github.com/robinrodricks/FluentFTP/wiki/Logging#faq_trace) or [log output](https://github.com/robinrodricks/FluentFTP/wiki/Logging#faq_logfile) to a file
     - SFTP is not supported as it is FTP over SSH, a completely different protocol (use [SSH.NET](https://github.com/sshnet/SSH.NET) for that)
   - **Asynchronous support:**
     - Synchronous and asynchronous methods using `async`/`await` for all operations
-    - Asynchronous methods for .NET 4.0 and below using `IAsyncResult` pattern (Begin*/End*)
+    - Asynchronous support for the `IAsyncEnumerable` pattern for `GetListing` methods (see `GetListingAsyncEnumerable`)
     - All asynchronous methods can be cancelled midway by passing a `CancellationToken`
     - All asynchronous methods honor the `ReadTimeout` and automatically cancel themselves if timed out
     - Improves thread safety by cloning the FTP control connection for file transfers (optional)
@@ -77,6 +78,7 @@ FluentFTP works on .NET and .NET Standard/.NET Core.
 | **.NET 3.5**      	| net35     		| 
 | **.NET 4.0**      	| net40     		| 
 | **.NET 4.5**      	| net45     		| 
+| **.NET 5.0**      	| net50     		| 
 | **.NET Standard 1.4** | netstandard1.4	| 
 | **.NET Standard 1.6** | netstandard1.6	| 
 | **.NET Standard 2.0** | netstandard2.0	| 
@@ -102,6 +104,12 @@ We also have extensive examples for all methods in [C#](https://github.com/robin
 
 Check the [Wiki](https://github.com/robinrodricks/FluentFTP/wiki).
 
+## Sponsorship
+
+If FluentFTP helped you or your organization, consider [sponsoring the project](https://github.com/sponsors/robinrodricks) by donating a small amount per month. Even $20 goes a long way! Everything I receive goes into household expenses and paying the bills. 
+
+I have been a freelancer for more than a decade, and your contributions go towards supporting my work and my family. I only recently started asking for donations to fund the time I spend on these open source projects. 
+
 ## Contributors
 
 Special thanks to these awesome people who helped create FluentFTP!
@@ -114,9 +122,9 @@ https://contributors-img.firebaseapp.com/image?repo=robinrodricks/FluentFTP
   <img src="https://github.com/robinrodricks/FluentFTP/raw/master/.github/contributors.png" />
 </a>
 
-## Supporters
+## Software Support
 
-FluentFTP is supported by these generous organizations:
+FluentFTP has recieved free software from these generous organizations:
 
 <table>
 <tr>

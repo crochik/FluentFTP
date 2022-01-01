@@ -1,5 +1,182 @@
 # Release Notes
 
+#### 35.2.3
+ - New: Detect PyFtpdLib FTP servers (allows for future server-specific handling)
+ - Fix: Pass CancellationToken to all methods that support cancellation (thanks [0xced](/0xced))
+ - Fix: Error check on z/OS init commands to ensure they executed correctly (thanks [FanDjango](/FanDjango))
+ - Fix: Improve `FileExists` for z/OS: better no SIZE, no MDTM on non HFS files (thanks [FanDjango](/FanDjango))
+ - Fix: `DownloadFile` for z/OS: `SetDataType` directly before the `RETR` command (thanks [FanDjango](/FanDjango))
+ - Fix: `IsAuthenticated` is not updated when calling `ConnectAsync` (thanks [datvm](/datvm))
+ - Fix: Reduce number of times `SetDataType` is called internally to improve performance (thanks [FanDjango](/FanDjango))
+ - Fix: Fail to detect z/OS server if `Unix` is also mentioned in welcome message (thanks [FanDjango](/FanDjango))
+
+#### 35.2.2
+ - Fix: z/OS GetFileSize: Ignore SIZE capability even if advertised by server as pointless (thanks [FanDjango](/FanDjango))
+ - Fix: z/OS DownloadFile: Read to end of stream because filesize is always inaccurate (thanks [FanDjango](/FanDjango))
+ - Fix: z/OS DownloadFile: Fix check for infinity or NaN progress values (thanks [FanDjango](/FanDjango))
+
+#### 35.2.1
+ - Fix: z/OS GetListing: Path can be null causing an exception (thanks [FanDjango](/FanDjango))
+ - Fix: z/OS GetListing: Large files overflow on size calculation resulting in negative file sizes (thanks [FanDjango](/FanDjango))
+ - Fix: z/OS GetListing: Listing fails unless users `CWD` to the correct folder of a non-`RECFM=U` PDS (thanks [FanDjango](/FanDjango))
+ 
+#### 35.2.0
+ - New: Support for connecting to FTP/FTPS servers via a SOCKS5 proxy (thanks [bjth](/bjth))
+ - New: Autoconfigure IBM z/OS FTP server using `SITE DATASETMODE` and `QUOTESOVERRIDE` (thanks [FanDjango](/FanDjango))
+ - Fix: `GetListing` item `Fullname` is now correctly calculated for Unix and z/OS systems (thanks [FanDjango](/FanDjango))
+
+#### 35.1.0
+ - New: `GetZOSFileSize` APIs to get file size of IBM z/OS file system objects (thanks [FanDjango](/FanDjango))
+ - New: `GetZOSListRealm` APIs to get realm of IBM z/OS servers (thanks [FanDjango](/FanDjango))
+ - New: Enhance the z/OS listing parser to get LRECL (via XDSS) on behalf of user (thanks [FanDjango](/FanDjango))
+ - Fix: `AutoConnect` detects rejected certificates on connection and raises `FtpInvalidCertificateException` (thanks [FanDjango](/FanDjango))
+ - Fix: `FtpListOption.ForceList` is not being honored by GetListing and machine listings are used instead (thanks [FanDjango](/FanDjango))
+ - Fix: `GetListing` regression causing many untrue parse fail warnings (thanks [FanDjango](/FanDjango))
+ - Fix: `GetObjectInfo` is overwriting Modified date of a `FtpListItem` if the consecutive MDTM command fails (thanks [Dylan-DutchAndBold](/Dylan-DutchAndBold))
+ - Fix: reusing same FtpClient should reload server capabilities unless its a cloned connection (thanks [FanDjango](/FanDjango))
+ - Fix: Executing `CWD` using `Execute` API does not invalidate internal CWD cache (thanks [FanDjango](/FanDjango))
+
+#### 35.0.5
+ - Fix: `UploadFile` fails to upload in `FtpRemoteExists.Resume` mode even if stream is seekable
+
+#### 35.0.4
+ - Fix: `AutoConnect` loads the newly detected `FtpProfile` to update properties & encryption
+ - Fix: Passive connections work in `FtpEncryptionMode.Auto` mode and FTPS connection fails
+
+#### 35.0.3
+ - Fix: `AutoDetect` correctly recommends `FtpEncryptionMode.None` if FTPS connection failed
+ - Fix: `AutoDetect` crashes because attempting to read socket type after disconnected
+
+#### 35.0.2
+ - Major: `AutoDetect` does not cycle through data connection types during connection as it is irrelevant
+ - Major: `AutoDetect` calculates a data connection type after connection succeeds (EPSV or PASV)
+
+#### 35.0.1
+ - Fix: `ConnectAsync` now correctly creates a FTP server-specific handler to match `Connect` behaviour
+
+#### 35.0.0
+ - **Automatic connection**
+   - Major: `AutoConnect` takes far fewer connection attempts due to improvements in connection handling
+   - Major: `AutoConnect` and `AutoDetect` are much faster and smarter and only try each setting once if possible
+   - Major: `AutoDetect` only tries Explicit and Implicit FTPS once and then falls back to plaintext FTP
+   - Major: `AutoDetect` only tries UTF-8 and never ASCII because most UTF-8 servers don't advertise it
+   - New: `AutoDetect` verifies if the server supports UTF-8 and updates the `FtpProfile` accordingly
+   - New: `FtpProfile` code generation adds a warning message if the encoding mode is unverified
+   - New: `AutoConnectAsync` now uses true asynchronous connection backed by new `AutoDetectAsync`
+   - New: `AutoConnect` now auto computes an FTP port unless a non-standard port is already set
+   - New: `AutoConnect` uses the main `FtpClient` connection rather than creating one clone per attempt
+   - Fix: `AutoConnect` remains connected to the first working profile rather than connecting twice on success
+   - Fix: `AutoConnect` reuses the same connection for FTPS and FTP rather than connecting again
+   - Fix: Ensure FTP server capabilities are loaded during `AutoDetect` if original connection is blank
+   - Fix: `AutoConnect` and `AutoDetect` will now throw exceptions for permanent failures (bad host/credentials)
+   - Fix: `ConnectAsync` now correctly resets the state flags to match `Connect` behaviour
+   - Fix: `Port` now correctly calculates the default port 21 when using `FtpEncryptionMode.Auto`
+ 
+ - **Appending and resuming uploads**
+   - Major: The setting `FtpLocalExists.Append` is now renamed to `FtpLocalExists.Resume`
+   - Major: The setting `FtpRemoteExists.Append` is now renamed to `FtpRemoteExists.Resume`
+   - Major: Split `FtpRemoteExists.Append` into two properties with distinct behaviour (`Resume` and `AddToEnd`)
+   - Major: Improvements to `UploadFile` and `UploadFileAsync` to support appending and resuming of uploads
+   - Major: `UploadFile` always sets the length of the remote file stream before uploading, appending or resuming
+   - Major: `UploadFile` skips uploading in `Resume` mode if local and remote file are equal length
+   - Fix: Implementation for resuming uploads using `UploadFile` based on fixes in `UploadFileAsync`
+ 
+ - **Machine listings**
+   - Major: `GetListing` prefers using Machine Listings over LIST command, unless a custom list parser is set
+   - Fix: `ListingParser` property is updated according to auto-detected parser during `Connect` and `ConnectAsync`
+   - Fix: `DeleteDirectory` and `DereferenceLink` methods no longer use `ForceList` and so prefer using Machine Listings
+   
+ - **File hashing**
+   - Major: All low-level hash methods are now inaccessible and `GetChecksum` is the only recommended approach
+   - Fix: `GetChecksum` now prints function call logs and sanitizes the input path
+   - New: `GetChecksum` switches to the first preferred hash algorithm for `HASH` command if no algorithm is specified
+   - New: `GetChecksum` validates if the required algorithm is unsupported and throws `FtpHashUnsupportedException`
+   - New: `GetChecksum` validates if hashing is unsupported by the server and throws `FtpHashUnsupportedException`
+   - Fix: `GetChecksumAsync` now takes the cancellation token last to follow conventions (argument reorder)
+   - Fix: Improved extraction of hash checksum when using the HASH command
+   - Fix: Improved extraction of hash checksum when using the MD5, SHA1, SHA256, SHA512 or X-series commands
+   - New: `SetHashAlgorithm` now only modifies the hash algorithm if it has changed
+ 
+ - **Path sanitization**
+   - Fix: All high level API methods sanitize input paths to improve robustness
+   - Fix: `GetWorkingDirectory` always sanitizes the returned working path directory
+   - Fix: Correctly handle server-specific absolute FTP paths for async operations
+   - Fix: All function call logs now print the sanitized path rather than raw input path
+ 
+ - **Path improvements**
+   - Major: `GetWorkingDirectory` is now extremely fast and caches the working dir path for subsequent calls
+   - Fix: `FileExists` supports checking name listings for Windows NT servers which use invalid slashes
+   - Fix: Root directory FTP paths no longer return `./` and instead return `/`
+ 
+ - **Other improvements**
+   - Major: All legacy asynchronous methods using `IAsyncResult` pattern have been removed (outdated since 2012)
+   - Fix: FXP file transfers for glFTPd server always try PASV and CPSV commands to get passive port
+   - Fix: Add logging for skipped files in `UploadFile`
+   - Fix: Add file path details in skipped files logged by `UploadFile` and `DownloadFile`
+   - New: `GetNameListing` to print results of name listing as verbose logs, similar to `GetListing`
+   - New: `GetFileSize` and `GetFileSizeAsync` to support a configurable return value if the file does not exist
+   - New: `FtpFolderNameRule` now supports `startSegment` to skip checking root directory folder names
+   - New: `FtpFolderNameRegexRule` now supports `startSegment` to skip checking root directory folder names
+
+#### 34.0.2
+ - New: Add support for `IsAuthenticated` property which enables detection of FTP connection and authentication
+ - Fix: Improved file path calculation when uploading files to IBM zOS running MVS (thanks [arafuls](/arafuls))
+ - Fix: Detection of file exists for Windows NT Servers fails due to invalid slashes
+ - Fix: Ensure `CompletionCode` is always null-checked to fix edge cases and comply with existing implementation
+ - Fix: Possible wrong IP when connecting to Azure FTP Server using `EPSV` command (thanks [jsantos74](/jsantos74))
+
+#### 34.0.1
+ - Fix file path calculation when uploading files to IBM zOS running MVS (thanks [arafuls](/arafuls))
+ - Detect fully-qualified directory when using data sets on IBM zOS running MVS (thanks [arafuls](/arafuls))
+
+#### 34.0.0
+ - Major: Refactor and cleanup helpers & extension methods
+ - Major: Changed namespace of `FtpTrace` to `FluentFTP.Helpers`
+ - Major: Changed namespace of `FtpListParser` to `FluentFTP.Helpers`
+ - Major: You need to import `FluentFTP.Helpers` to gain access to FTP extension methods
+ - Major: Changed visibility of various internal FTP helpers to `internal` to prevent external access
+ - New: Ability to set a local IP address to be used for FTP connections (thanks [daviddenis-stx](/daviddenis-stx))
+ - New: Properties for local IP: `SocketLocalIp`, `SocketLocalEndPoint`, `SocketRemoteEndPoint` (thanks [daviddenis-stx](/daviddenis-stx))
+
+#### 33.2.0
+ - New: Ability to block certain server ports from being used during passive FTP connection (PASV/EPSV)
+ - New: `PassiveBlockedPorts` and `PassiveMaxAttempts` properties to configure passive blocked ports
+
+#### 33.1.8
+ - Fix: Add support for another server specific string to detect if file exists
+ - Fix: Prevent memory leaks with FTPS on AKS by disabling `ValidateCertificateRevocation` by default
+ 
+#### 33.1.7
+ - Fix: `DownloadFile` should fail if directory path is passed in `localPath`
+ - Fix: `LastReply` is not set when using async methods
+ - Fix: Ambiguous call when using LINQ extension methods and EF core
+ - Fix: Remove dependency on `System.Linq.Async` and disable `GetListingAsyncEnumerable`
+
+#### 33.1.6
+ - Fix: Use .NET Core API for .NET 5 builds to fix various networking and connectivity issues
+ - New: Support detection of FRITZ!Box FTP servers (allows for server specific commands)
+
+#### 33.1.5
+ - Fix: Do not force users to `Connect` if capabilities are not loaded (only force if `Capabilities` are read before connecting)
+
+#### 33.1.4
+ - Fix: Conditionally hard-abort `AutoConnect` only if the credentials were incorrect
+
+#### 33.1.3
+ - New: `LogToFile` and `LogToConsole` are now available on .NET Framework / .NET 5.0
+ - Fix: `Capabilities` & `HashAlgorithms` are returned if they are loaded regardless of connection status
+
+#### 33.1.2
+ - Fix: Prevent `Capabilities` & `HashAlgorithms` from causing sync-over-async path
+ - Fix: `NullReferenceException` during `UploadFile` if the error message is unknown
+ - Fix: If incorrect credentials are passed to `AutoConnect`, it does not hard abort
+ - Fix: Initializing TLS Authentication hangs in .NET 5 if `SslBuffering` is enabled
+
+#### 33.1.1
+ - New: Support for .NET 5.0 platform
+ - New: Support for `IAsyncEnumerable` pattern in .NET Standard 2.0+ and .NET 5.0 (thanks [hez2010](/hez2010))
+ - New: Async variant of `GetListingAsync` introduced: `GetListingAsyncEnumerable`
+
 #### 33.0.3
 - Fix: URI ports not being respected when Uri constructor used (thanks [julian94](/julian94))
 - Fix: Respect `332 Need account for login` response during FTP client authorization (thanks [novak-as](/novak-as))

@@ -110,5 +110,25 @@ namespace FluentFTP {
 		/// Definitely IBM z/OS FTP server
 		/// </summary>
 		IBMzOSFTP,
+
+		/// <summary>
+		/// Definitely IBM OS/400 FTP server
+		/// </summary>
+		IBMOS400FTP,
+
+		/// <summary>
+		/// Definitely FritzBox FTP server
+		/// </summary>
+		FritzBox,
+
+		/// <summary>
+		/// Definitely WS_FTP server
+		/// </summary>
+		WSFTPServer,
+
+		/// <summary>
+		/// Definitely PyFtpdLib server
+		/// </summary>
+		PyFtpdLib,
 	}
 }

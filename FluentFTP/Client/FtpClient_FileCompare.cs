@@ -1,6 +1,7 @@
 ﻿using System;
 using FluentFTP.Streams;
 using FluentFTP.Rules;
+using FluentFTP.Helpers;
 using System.IO;
 #if !CORE
 using System.Web;
@@ -35,6 +36,8 @@ namespace FluentFTP {
 			if (remotePath.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "remotePath");
 			}
+
+			remotePath = remotePath.GetFtpPath();
 
 			LogFunc(nameof(CompareFile), new object[] { localPath, remotePath, options });
 
@@ -120,6 +123,8 @@ namespace FluentFTP {
 				throw new ArgumentException("Required parameter is null or blank.", "remotePath");
 			}
 
+			remotePath = remotePath.GetFtpPath();
+
 			LogFunc(nameof(CompareFileAsync), new object[] { localPath, remotePath, options });
 
 
@@ -136,7 +141,7 @@ namespace FluentFTP {
 
 				// check file size
 				var localSize = await FtpFileStream.GetFileSizeAsync(localPath, false, token);
-				var remoteSize = await GetFileSizeAsync(remotePath, token);
+				var remoteSize = await GetFileSizeAsync(remotePath, -1, token);
 				if (localSize != remoteSize) {
 					return FtpCompareResult.NotEqual;
 				}
@@ -160,7 +165,7 @@ namespace FluentFTP {
 
 				// check file checksum
 				if (SupportsChecksum()) {
-					var hash = await GetChecksumAsync(remotePath, token);
+					var hash = await GetChecksumAsync(remotePath, FtpHashAlgorithm.NONE, token);
 					if (hash.IsValid) {
 						if (!hash.Verify(localPath)) {
 							return FtpCompareResult.NotEqual;

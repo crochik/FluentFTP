@@ -14,11 +14,13 @@ using System.Net;
 using FluentFTP.Proxy;
 using FluentFTP.Servers;
 using FluentFTP.Streams;
+using FluentFTP.Helpers;
 #if !CORE
 using System.Web;
 #endif
 #if (CORE || NETFX)
 using System.Threading;
+using FluentFTP.Exceptions;
 #endif
 #if (CORE || NET45)
 using System.Threading.Tasks;
@@ -267,6 +269,7 @@ namespace FluentFTP {
 		/// upload &amp; verification.  Additionally, if any verify option is set and a retry is attempted then overwrite will automatically be set to true for subsequent attempts.
 		/// </remarks>
 		public FtpStatus DownloadFile(string localPath, string remotePath, FtpLocalExists existsMode = FtpLocalExists.Overwrite, FtpVerify verifyOptions = FtpVerify.None, Action<FtpProgress> progress = null) {
+			
 			// verify args
 			if (localPath.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "localPath");
@@ -282,16 +285,23 @@ namespace FluentFTP {
 		private FtpStatus DownloadFileToFile(string localPath, string remotePath, FtpLocalExists existsMode, FtpVerify verifyOptions, Action<FtpProgress> progress, FtpProgress metaProgress) {
 			bool isAppend = false;
 
+			remotePath = remotePath.GetFtpPath();
+
 			LogFunc(nameof(DownloadFile), new object[] { localPath, remotePath, existsMode, verifyOptions });
+
+			// skip downloading if the localPath is a folder
+			if (LocalPaths.IsLocalFolderPath(localPath)) {
+				throw new ArgumentException("Local path must specify a file path and not a folder path.", "localPath");
+			}
 
 			// skip downloading if local file size matches
 			long knownFileSize = 0;
 			long restartPos = 0;
-			if (existsMode == FtpLocalExists.Append && File.Exists(localPath)) {
+			if (existsMode == FtpLocalExists.Resume && File.Exists(localPath)) {
 				knownFileSize = GetFileSize(remotePath);
 				restartPos = FtpFileStream.GetFileSize(localPath, false);
 				if (knownFileSize.Equals(restartPos)) {
-					LogStatus(FtpTraceLevel.Info, "Append is selected => Local file size matches size on server => skipping");
+					LogStatus(FtpTraceLevel.Info, "Skipping file because Resume is enabled and file is fully downloaded (Remote: " + remotePath + ", Local: " + localPath + ")");
 					return FtpStatus.Skipped;
 				}
 				else {
@@ -299,14 +309,14 @@ namespace FluentFTP {
 				}
 			}
 			else if (existsMode == FtpLocalExists.Skip && File.Exists(localPath)) {
-				LogStatus(FtpTraceLevel.Info, "Skip is selected => Local file exists => skipping");
+				LogStatus(FtpTraceLevel.Info, "Skipping file because Skip is enabled and file already exists locally (Remote: " + remotePath + ", Local: " + localPath + ")");
 				return FtpStatus.Skipped;
 			}
 
 			try {
 				// create the folders
 				var dirPath = Path.GetDirectoryName(localPath);
-				if (!FtpExtensions.IsNullOrWhiteSpace(dirPath) && !Directory.Exists(dirPath)) {
+				if (!Strings.IsNullOrWhiteSpace(dirPath) && !Directory.Exists(dirPath)) {
 					Directory.CreateDirectory(dirPath);
 				}
 			}
@@ -377,7 +387,7 @@ namespace FluentFTP {
 		/// any hash algorithm, then verification is ignored.  If only <see cref="FtpVerify.OnlyChecksum"/> is set then the return of this method depends on both a successful 
 		/// upload &amp; verification.  Additionally, if any verify option is set and a retry is attempted then overwrite will automatically be set to true for subsequent attempts.
 		/// </remarks>
-		public async Task<FtpStatus> DownloadFileAsync(string localPath, string remotePath, FtpLocalExists existsMode = FtpLocalExists.Append, FtpVerify verifyOptions = FtpVerify.None, IProgress<FtpProgress> progress = null, CancellationToken token = default(CancellationToken)) {
+		public async Task<FtpStatus> DownloadFileAsync(string localPath, string remotePath, FtpLocalExists existsMode = FtpLocalExists.Resume, FtpVerify verifyOptions = FtpVerify.None, IProgress<FtpProgress> progress = null, CancellationToken token = default(CancellationToken)) {
 			// verify args
 			if (localPath.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "localPath");
@@ -391,6 +401,7 @@ namespace FluentFTP {
 		}
 
 		private async Task<FtpStatus> DownloadFileToFileAsync(string localPath, string remotePath, FtpLocalExists existsMode, FtpVerify verifyOptions, IProgress<FtpProgress> progress, CancellationToken token, FtpProgress metaProgress) {
+			
 			// verify args
 			if (localPath.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "localPath");
@@ -399,6 +410,13 @@ namespace FluentFTP {
 			if (remotePath.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "remotePath");
 			}
+
+			// skip downloading if the localPath is a folder
+			if (LocalPaths.IsLocalFolderPath(localPath)) {
+				throw new ArgumentException("Local path must specify a file path and not a folder path.", "localPath");
+			}
+
+			remotePath = remotePath.GetFtpPath();
 
 			LogFunc(nameof(DownloadFileAsync), new object[] { localPath, remotePath, existsMode, verifyOptions });
 
@@ -409,17 +427,17 @@ namespace FluentFTP {
 			long knownFileSize = 0;
 			long restartPos = 0;
 #if CORE
-			if (existsMode == FtpLocalExists.Append && await Task.Run(() => File.Exists(localPath), token)) {
-				knownFileSize = (await GetFileSizeAsync(remotePath, token));
+			if (existsMode == FtpLocalExists.Resume && await Task.Run(() => File.Exists(localPath), token)) {
+				knownFileSize = (await GetFileSizeAsync(remotePath, -1, token));
 				restartPos = await FtpFileStream.GetFileSizeAsync(localPath, false, token);
 				if (knownFileSize.Equals(restartPos)) {
 #else
-			if (existsMode == FtpLocalExists.Append && File.Exists(localPath)) {
-				knownFileSize = (await GetFileSizeAsync(remotePath, token));
+			if (existsMode == FtpLocalExists.Resume && File.Exists(localPath)) {
+				knownFileSize = (await GetFileSizeAsync(remotePath, -1, token));
 				restartPos = FtpFileStream.GetFileSize(localPath, false);
 				if (knownFileSize.Equals(restartPos)) {
 #endif
-					LogStatus(FtpTraceLevel.Info, "Append is enabled => Local file size matches size on server => skipping");
+					LogStatus(FtpTraceLevel.Info, "Skipping file because Resume is enabled and file is fully downloaded (Remote: " + remotePath + ", Local: " + localPath + ")");
 					return FtpStatus.Skipped;
 				}
 				else {
@@ -431,7 +449,7 @@ namespace FluentFTP {
 #else
 			else if (existsMode == FtpLocalExists.Skip && File.Exists(localPath)) {
 #endif
-				LogStatus(FtpTraceLevel.Info, "Skip is selected => Local file exists => skipping");
+				LogStatus(FtpTraceLevel.Info, "Skipping file because Skip is enabled and file already exists locally (Remote: " + remotePath + ", Local: " + localPath + ")");
 				return FtpStatus.Skipped;
 			}
 
@@ -477,7 +495,7 @@ namespace FluentFTP {
 					verified = await VerifyTransferAsync(localPath, remotePath, token);
 					LogStatus(FtpTraceLevel.Info, "File Verification: " + (verified ? "PASS" : "FAIL"));
 					if (!verified && attemptsLeft > 0) {
-						LogStatus(FtpTraceLevel.Verbose, "Retrying due to failed verification." + (existsMode == FtpLocalExists.Append ? "  Overwrite will occur." : "") + "  " + attemptsLeft + " attempts remaining");
+						LogStatus(FtpTraceLevel.Verbose, "Retrying due to failed verification." + (existsMode == FtpLocalExists.Resume ? "  Overwrite will occur." : "") + "  " + attemptsLeft + " attempts remaining");
 						// Force overwrite if a retry is required
 						existsMode = FtpLocalExists.Overwrite;
 					}
@@ -521,6 +539,8 @@ namespace FluentFTP {
 				throw new ArgumentException("Required parameter is null or blank.", "remotePath");
 			}
 
+			remotePath = remotePath.GetFtpPath();
+
 			LogFunc(nameof(Download), new object[] { remotePath });
 
 			// download the file from the server
@@ -542,6 +562,8 @@ namespace FluentFTP {
 			if (remotePath.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "remotePath");
 			}
+
+			remotePath = remotePath.GetFtpPath();
 
 			LogFunc(nameof(Download), new object[] { remotePath });
 
@@ -581,6 +603,8 @@ namespace FluentFTP {
 				throw new ArgumentException("Required parameter is null or blank.", "remotePath");
 			}
 
+			remotePath = remotePath.GetFtpPath();
+
 			LogFunc(nameof(DownloadAsync), new object[] { remotePath });
 
 			// download the file from the server
@@ -602,6 +626,8 @@ namespace FluentFTP {
 			if (remotePath.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "remotePath");
 			}
+
+			remotePath = remotePath.GetFtpPath();
 
 			LogFunc(nameof(DownloadAsync), new object[] { remotePath });
 
@@ -652,7 +678,7 @@ namespace FluentFTP {
 
 				// if the server has not provided a length for this file
 				// we read until EOF instead of reading a specific number of bytes
-				var readToEnd = fileLen <= 0;
+				var readToEnd = fileLen <= 0 || (ServerType == FtpServer.IBMzOSFTP && ServerOS == FtpOperatingSystem.IBMzOS);
 
 				const int rateControlResolution = 100;
 				var rateLimitBytes = DownloadRateLimit != 0 ? (long)DownloadRateLimit * 1024 : 0;
@@ -743,7 +769,7 @@ namespace FluentFTP {
 					catch (TimeoutException ex) {
 
 						// fix: attempting to download data after we reached the end of the stream
-						// often throws a timeout execption, so we silently absorb that here
+						// often throws a timeout exception, so we silently absorb that here
 						if (offset >= fileLen) {
 							break;
 						}
@@ -804,10 +830,6 @@ namespace FluentFTP {
 
 				return true;
 			}
-			catch (IOException ex1) {
-				LogStatus(FtpTraceLevel.Verbose, "IOException for file " + localPath + " : " + ex1.Message);
-				return false;
-			}
 			catch (Exception ex1) {
 
 				// close stream before throwing error
@@ -825,6 +847,11 @@ namespace FluentFTP {
 					}
 					catch (Exception) {
 					}
+				}
+
+				if (ex1 is IOException) {
+					LogStatus(FtpTraceLevel.Verbose, "IOException for file " + localPath + " : " + ex1.Message);
+					return false;
 				}
 
 				// absorb "file does not exist" exceptions and simply return false
@@ -877,7 +904,7 @@ namespace FluentFTP {
 				long fileLen = 0;
 
 				if (DownloadDataType == FtpDataType.Binary && progress != null) {
-					fileLen = knownFileSize > 0 ? knownFileSize : await GetFileSizeAsync(remotePath, token);
+					fileLen = knownFileSize > 0 ? knownFileSize : await GetFileSizeAsync(remotePath, -1, token);
 				}
 
 				// open the file for reading
@@ -885,7 +912,7 @@ namespace FluentFTP {
 
 				// if the server has not provided a length for this file
 				// we read until EOF instead of reading a specific number of bytes
-				var readToEnd = fileLen <= 0;
+				var readToEnd = fileLen <= 0 || (ServerType == FtpServer.IBMzOSFTP && ServerOS == FtpOperatingSystem.IBMzOS);
 
 				const int rateControlResolution = 100;
 				var rateLimitBytes = DownloadRateLimit != 0 ? (long)DownloadRateLimit * 1024 : 0;
@@ -977,7 +1004,7 @@ namespace FluentFTP {
 					catch (TimeoutException ex) {
 
 						// fix: attempting to download data after we reached the end of the stream
-						// often throws a timeout execption, so we silently absorb that here
+						// often throws a timeout exception, so we silently absorb that here
 						if (offset >= fileLen) {
 							break;
 						}
@@ -1038,10 +1065,6 @@ namespace FluentFTP {
 
 				return true;
 			}
-			catch (IOException ex1) {
-				LogStatus(FtpTraceLevel.Verbose, "IOException for file " + localPath + " : " + ex1.Message);
-				return false;
-			}
 			catch (Exception ex1) {
 
 				// close stream before throwing error
@@ -1059,6 +1082,11 @@ namespace FluentFTP {
 					}
 					catch (Exception) {
 					}
+				}
+
+				if (ex1 is IOException) {
+					LogStatus(FtpTraceLevel.Verbose, "IOException for file " + localPath + " : " + ex1.Message);
+					return false;
 				}
 
 				if (ex1 is OperationCanceledException) {

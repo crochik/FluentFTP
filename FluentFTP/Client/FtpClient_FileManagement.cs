@@ -12,6 +12,7 @@ using System.Security.Authentication;
 using System.Net;
 using FluentFTP.Proxy;
 using FluentFTP.Servers;
+using FluentFTP.Helpers;
 #if !CORE
 using System.Web;
 #endif
@@ -32,7 +33,6 @@ namespace FluentFTP {
 		/// Deletes a file on the server
 		/// </summary>
 		/// <param name="path">The full or relative path to the file</param>
-		/// <example><code source="..\Examples\DeleteFile.cs" lang="cs" /></example>
 		public void DeleteFile(string path) {
 			FtpReply reply;
 
@@ -44,9 +44,11 @@ namespace FluentFTP {
 #if !CORE14
 			lock (m_lock) {
 #endif
+				path = path.GetFtpPath();
+
 				LogFunc(nameof(DeleteFile), new object[] { path });
 
-				if (!(reply = Execute("DELE " + path.GetFtpPath())).Success) {
+				if (!(reply = Execute("DELE " + path)).Success) {
 					throw new FtpCommandException(reply);
 				}
 
@@ -56,39 +58,6 @@ namespace FluentFTP {
 #endif
 		}
 
-#if !ASYNC
-		private delegate void AsyncDeleteFile(string path);
-
-		/// <summary>
-		/// Begins an asynchronous operation to delete the specified file on the server
-		/// </summary>
-		/// <param name="path">The full or relative path to the file</param>
-		/// <param name="callback">Async callback</param>
-		/// <param name="state">State object</param>
-		/// <returns>IAsyncResult</returns>
-		/// <example><code source="..\Examples\BeginDeleteFile.cs" lang="cs" /></example>
-		public IAsyncResult BeginDeleteFile(string path, AsyncCallback callback, object state) {
-			IAsyncResult ar;
-			AsyncDeleteFile func;
-
-			lock (m_asyncmethods) {
-				ar = (func = DeleteFile).BeginInvoke(path, callback, state);
-				m_asyncmethods.Add(ar, func);
-			}
-
-			return ar;
-		}
-
-		/// <summary>
-		/// Ends a call to <see cref="BeginDeleteFile"/>
-		/// </summary>
-		/// <param name="ar">IAsyncResult returned from BeginDeleteFile</param>
-		/// <example><code source="..\Examples\BeginDeleteFile.cs" lang="cs" /></example>
-		public void EndDeleteFile(IAsyncResult ar) {
-			GetAsyncDelegate<AsyncDeleteFile>(ar).EndInvoke(ar);
-		}
-
-#endif
 #if ASYNC
 		/// <summary>
 		/// Deletes a file from the server asynchronously
@@ -103,9 +72,11 @@ namespace FluentFTP {
 				throw new ArgumentException("Required parameter is null or blank.", "path");
 			}
 
+			path = path.GetFtpPath();
+
 			LogFunc(nameof(DeleteFileAsync), new object[] { path });
 
-			if (!(reply = await ExecuteAsync("DELE " + path.GetFtpPath(), token)).Success) {
+			if (!(reply = await ExecuteAsync("DELE " + path, token)).Success) {
 				throw new FtpCommandException(reply);
 			}
 		}
@@ -120,7 +91,6 @@ namespace FluentFTP {
 		/// </summary>
 		/// <param name="path">The full or relative path to the file</param>
 		/// <returns>True if the file exists</returns>
-		/// <example><code source="..\Examples\FileExists.cs" lang="cs" /></example>
 		public bool FileExists(string path) {
 			// verify args
 			if (path.IsBlank()) {
@@ -130,18 +100,30 @@ namespace FluentFTP {
 #if !CORE14
 			lock (m_lock) {
 #endif
+				path = path.GetFtpPath();
 
 				LogFunc(nameof(FileExists), new object[] { path });
 
-				// calc the absolute filepath
-				path = GetAbsolutePath(path.GetFtpPath());
+				// z/OS Notes:
+				// In the following code, this checks for special z/OS handling:
+				// ServerType == FtpServer.IBMzOSFTP && ServerOS == FtpOperatingSystem.IBMzOS
+				// A check for path.StartsWith("/") tells us, even if it is z/OS, we can use the 
+				// normal unix logic
+
+				// If z/OS: Do not GetAbsolutePath(), unless we have a leading slash
+				if (ServerType != FtpServer.IBMzOSFTP || ServerOS != FtpOperatingSystem.IBMzOS || path.StartsWith("/")) {
+					// calc the absolute filepath
+					path = GetAbsolutePath(path);
+				}
 
 				// since FTP does not include a specific command to check if a file exists
 				// here we check if file exists by attempting to get its filesize (SIZE)
-				if (HasFeature(FtpCapability.SIZE)) {
+				// If z/OS: Do not do SIZE, unless we have a leading slash
+				if (HasFeature(FtpCapability.SIZE) && (ServerType != FtpServer.IBMzOSFTP || ServerOS != FtpOperatingSystem.IBMzOS || path.StartsWith("/"))) {
+
 					// Fix #328: get filesize in ASCII or Binary mode as required by server
 					var sizeReply = new FtpSizeReply();
-					GetFileSizeInternal(path, sizeReply);
+					GetFileSizeInternal(path, sizeReply, -1);
 
 					// handle known errors to the SIZE command
 					var sizeKnownError = CheckFileExistsBySize(sizeReply);
@@ -151,7 +133,8 @@ namespace FluentFTP {
 				}
 
 				// check if file exists by attempting to get its date modified (MDTM)
-				if (HasFeature(FtpCapability.MDTM)) {
+				// If z/OS: Do not do MDTM, unless we have a leading slash
+				if (HasFeature(FtpCapability.MDTM) && (ServerType != FtpServer.IBMzOSFTP || ServerOS != FtpOperatingSystem.IBMzOS || path.StartsWith("/"))) {
 					var reply = Execute("MDTM " + path);
 					var ch = reply.Code[0];
 					if (ch == '2') {
@@ -162,20 +145,18 @@ namespace FluentFTP {
 					}
 				}
 
+				// If z/OS: different handling, unless we have a leading slash
+				if (ServerType == FtpServer.IBMzOSFTP && ServerOS == FtpOperatingSystem.IBMzOS && !path.StartsWith("/")) {
+					var fileList = GetNameListing(path);
+					return fileList.Count() > 0;
+				}
+				else
 				// check if file exists by getting a name listing (NLST)
-				var fileList = GetNameListing(path.GetFtpDirectoryName());
-				return FtpExtensions.FileExistsInNameListing(fileList, path);
+				{
+					var fileList = GetNameListing(path.GetFtpDirectoryName());
+					return FileListings.FileExistsInNameListing(fileList, path);
+				}
 
-
-				// check if file exists by attempting to download it (RETR)
-				/*try {
-					Stream stream = OpenRead(path);
-					stream.Close();
-					return true;
-				} catch (FtpException ex) {
-				}*/
-
-				return false;
 #if !CORE14
 			}
 
@@ -204,42 +185,6 @@ namespace FluentFTP {
 			return null;
 		}
 
-#if !ASYNC
-		private delegate bool AsyncFileExists(string path);
-
-		/// <summary>
-		/// Begins an asynchronous operation to check if a file exists on the 
-		/// server by taking a  file listing of the parent directory in the path
-		/// and comparing the results the path supplied.
-		/// </summary>
-		/// <param name="path">The full or relative path to the file</param>
-		/// <param name="callback">Async callback</param>
-		/// <param name="state">State object</param>
-		/// <returns>IAsyncResult</returns>
-		/// <example><code source="..\Examples\BeginFileExists.cs" lang="cs" /></example>
-		public IAsyncResult BeginFileExists(string path, AsyncCallback callback, object state) {
-			AsyncFileExists func;
-			IAsyncResult ar;
-
-			lock (m_asyncmethods) {
-				ar = (func = FileExists).BeginInvoke(path, callback, state);
-				m_asyncmethods.Add(ar, func);
-			}
-
-			return ar;
-		}
-
-		/// <summary>
-		/// Ends a call to <see cref="o:BeginFileExists"/>
-		/// </summary>
-		/// <param name="ar">IAsyncResult returned from <see cref="o:BeginFileExists"/></param>
-		/// <returns>True if the file exists, false otherwise</returns>
-		/// <example><code source="..\Examples\BeginFileExists.cs" lang="cs" /></example>
-		public bool EndFileExists(IAsyncResult ar) {
-			return GetAsyncDelegate<AsyncFileExists>(ar).EndInvoke(ar);
-		}
-
-#endif
 #if ASYNC
 		/// <summary>
 		/// Checks if a file exists on the server asynchronously.
@@ -253,18 +198,30 @@ namespace FluentFTP {
 				throw new ArgumentException("Required parameter is null or blank.", "path");
 			}
 
+			path = path.GetFtpPath();
+
 			LogFunc(nameof(FileExistsAsync), new object[] { path });
 
-			// calc the absolute filepath
-			path = await GetAbsolutePathAsync(path.GetFtpPath(), token);
+			// z/OS Notes:
+			// In the following code, this checks for special z/OS handling:
+			// ServerType == FtpServer.IBMzOSFTP && ServerOS == FtpOperatingSystem.IBMzOS
+			// A check for path.StartsWith("/") tells us, even if it is z/OS, we can use the 
+			// normal unix logic
+
+			// Do not need GetAbsolutePath(path) if z/OS
+			if (ServerType != FtpServer.IBMzOSFTP || ServerOS != FtpOperatingSystem.IBMzOS || path.StartsWith("/")) {
+				// calc the absolute filepath
+				path = await GetAbsolutePathAsync(path, token);
+			}
 
 			// since FTP does not include a specific command to check if a file exists
 			// here we check if file exists by attempting to get its filesize (SIZE)
-			if (HasFeature(FtpCapability.SIZE)) {
+			// If z/OS: Do not do SIZE, unless we have a leading slash
+			if (HasFeature(FtpCapability.SIZE) && (ServerType != FtpServer.IBMzOSFTP || ServerOS != FtpOperatingSystem.IBMzOS || path.StartsWith("/"))) {
 
 				// Fix #328: get filesize in ASCII or Binary mode as required by server
 				FtpSizeReply sizeReply = new FtpSizeReply();
-				await GetFileSizeInternalAsync(path, token, sizeReply);
+				await GetFileSizeInternalAsync(path, -1, token, sizeReply);
 
 				// handle known errors to the SIZE command
 				var sizeKnownError = CheckFileExistsBySize(sizeReply);
@@ -274,7 +231,8 @@ namespace FluentFTP {
 			}
 
 			// check if file exists by attempting to get its date modified (MDTM)
-			if (HasFeature(FtpCapability.MDTM)) {
+			// If z/OS: Do not do MDTM, unless we have a leading slash
+			if (HasFeature(FtpCapability.MDTM) && (ServerType != FtpServer.IBMzOSFTP || ServerOS != FtpOperatingSystem.IBMzOS || path.StartsWith("/"))) {
 				FtpReply reply = await ExecuteAsync("MDTM " + path, token);
 				var ch = reply.Code[0];
 				if (ch == '2') {
@@ -286,19 +244,17 @@ namespace FluentFTP {
 				}
 			}
 
+			// If z/OS: different handling, unless we have a leading slash
+			if (ServerType == FtpServer.IBMzOSFTP && ServerOS == FtpOperatingSystem.IBMzOS && !path.StartsWith("/")) {
+				var fileList = await GetNameListingAsync(path, token);
+				return fileList.Count() > 0;
+			}
+			else
 			// check if file exists by getting a name listing (NLST)
-			string[] fileList = await GetNameListingAsync(path.GetFtpDirectoryName(), token);
-			return FtpExtensions.FileExistsInNameListing(fileList, path);
-
-			// check if file exists by attempting to download it (RETR)
-			/*try {
-				Stream stream = OpenRead(path);
-				stream.Close();
-				return true;
-			} catch (FtpException ex) {
-			}*/
-
-			return false;
+			{
+				var fileList = await GetNameListingAsync(path.GetFtpDirectoryName(), token);
+				return FileListings.FileExistsInNameListing(fileList, path);
+			}
 		}
 #endif
 
@@ -313,7 +269,6 @@ namespace FluentFTP {
 		/// </summary>
 		/// <param name="path">The full or relative path to the object</param>
 		/// <param name="dest">The new full or relative path including the new name of the object</param>
-		/// <example><code source="..\Examples\Rename.cs" lang="cs" /></example>
 		public void Rename(string path, string dest) {
 			FtpReply reply;
 
@@ -329,11 +284,14 @@ namespace FluentFTP {
 #if !CORE14
 			lock (m_lock) {
 #endif
+				path = path.GetFtpPath();
+				dest = dest.GetFtpPath();
+
 				LogFunc(nameof(Rename), new object[] { path, dest });
 
 				// calc the absolute filepaths
-				path = GetAbsolutePath(path.GetFtpPath());
-				dest = GetAbsolutePath(dest.GetFtpPath());
+				path = GetAbsolutePath(path);
+				dest = GetAbsolutePath(dest);
 
 				if (!(reply = Execute("RNFR " + path)).Success) {
 					throw new FtpCommandException(reply);
@@ -349,42 +307,6 @@ namespace FluentFTP {
 #endif
 		}
 
-#if !ASYNC
-		private delegate void AsyncRename(string path, string dest);
-
-		/// <summary>
-		/// Begins an asynchronous operation to rename an object on the remote file system.
-		/// Low level method that should NOT be used in most cases. Prefer MoveFile() and MoveDirectory().
-		/// Throws exceptions if the file does not exist, or if the destination file already exists.
-		/// </summary>
-		/// <param name="path">The full or relative path to the object</param>
-		/// <param name="dest">The new full or relative path including the new name of the object</param>
-		/// <param name="callback">Async callback</param>
-		/// <param name="state">State object</param>
-		/// <returns>IAsyncResult</returns>
-		/// <example><code source="..\Examples\BeginRename.cs" lang="cs" /></example>
-		public IAsyncResult BeginRename(string path, string dest, AsyncCallback callback, object state) {
-			AsyncRename func;
-			IAsyncResult ar;
-
-			lock (m_asyncmethods) {
-				ar = (func = Rename).BeginInvoke(path, dest, callback, state);
-				m_asyncmethods.Add(ar, func);
-			}
-
-			return ar;
-		}
-
-		/// <summary>
-		/// Ends a call to <see cref="BeginRename"/>
-		/// </summary>
-		/// <param name="ar">IAsyncResult returned from <see cref="BeginRename"/></param>
-		/// <example><code source="..\Examples\BeginRename.cs" lang="cs" /></example>
-		public void EndRename(IAsyncResult ar) {
-			GetAsyncDelegate<AsyncRename>(ar).EndInvoke(ar);
-		}
-
-#endif
 #if ASYNC
 		/// <summary>
 		/// Renames an object on the remote file system asynchronously.
@@ -406,11 +328,14 @@ namespace FluentFTP {
 				throw new ArgumentException("Required parameter is null or blank.", "dest");
 			}
 
+			path = path.GetFtpPath();
+			dest = dest.GetFtpPath();
+
 			LogFunc(nameof(RenameAsync), new object[] { path, dest });
 
 			// calc the absolute filepaths
-			path = await GetAbsolutePathAsync(path.GetFtpPath(), token);
-			dest = await GetAbsolutePathAsync(dest.GetFtpPath(), token);
+			path = await GetAbsolutePathAsync(path, token);
+			dest = await GetAbsolutePathAsync(dest, token);
 
 			if (!(reply = await ExecuteAsync("RNFR " + path, token)).Success) {
 				throw new FtpCommandException(reply);
@@ -445,6 +370,9 @@ namespace FluentFTP {
 				throw new ArgumentException("Required parameter is null or blank.", "dest");
 			}
 
+			path = path.GetFtpPath();
+			dest = dest.GetFtpPath();
+
 			LogFunc(nameof(MoveFile), new object[] { path, dest, existsMode });
 
 			if (FileExists(path)) {
@@ -472,41 +400,6 @@ namespace FluentFTP {
 			return false;
 		}
 
-#if !ASYNC
-		private delegate bool AsyncMoveFile(string path, string dest, FtpRemoteExists existsMode);
-
-		/// <summary>
-		/// Begins an asynchronous operation to move a file on the remote file system, from one directory to another.
-		/// Always checks if the source file exists. Checks if the dest file exists based on the `existsMode` parameter.
-		/// Only throws exceptions for critical errors.
-		/// </summary>
-		/// <param name="path">The full or relative path to the object</param>
-		/// <param name="dest">The new full or relative path including the new name of the object</param>
-		/// <param name="existsMode">Should we check if the dest file exists? And if it does should we overwrite/skip the operation?</param>
-		/// <param name="callback">Async callback</param>
-		/// <param name="state">State object</param>
-		/// <returns>IAsyncResult</returns>
-		public IAsyncResult BeginMoveFile(string path, string dest, FtpRemoteExists existsMode, AsyncCallback callback, object state) {
-			AsyncMoveFile func;
-			IAsyncResult ar;
-
-			lock (m_asyncmethods) {
-				ar = (func = MoveFile).BeginInvoke(path, dest, existsMode, callback, state);
-				m_asyncmethods.Add(ar, func);
-			}
-
-			return ar;
-		}
-
-		/// <summary>
-		/// Ends a call to <see cref="BeginMoveFile"/>
-		/// </summary>
-		/// <param name="ar">IAsyncResult returned from <see cref="BeginMoveFile"/></param>
-		public void EndMoveFile(IAsyncResult ar) {
-			GetAsyncDelegate<AsyncMoveFile>(ar).EndInvoke(ar);
-		}
-
-#endif
 #if ASYNC
 		/// <summary>
 		/// Moves a file asynchronously on the remote file system from one directory to another.
@@ -527,6 +420,9 @@ namespace FluentFTP {
 			if (dest.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "dest");
 			}
+
+			path = path.GetFtpPath();
+			dest = dest.GetFtpPath();
 
 			LogFunc(nameof(MoveFileAsync), new object[] { path, dest, existsMode });
 

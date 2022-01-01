@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -102,7 +103,7 @@ namespace FluentFTP {
 		FtpReply GetReply();
 		void Connect();
 		void Connect(FtpProfile profile);
-		List<FtpProfile> AutoDetect(bool firstOnly);
+		List<FtpProfile> AutoDetect(bool firstOnly = true, bool cloneConnection = true);
 		FtpProfile AutoConnect();
 		void Disconnect();
 		bool HasFeature(FtpCapability cap);
@@ -113,6 +114,7 @@ namespace FluentFTP {
 		Task<FtpReply> GetReplyAsync(CancellationToken token = default(CancellationToken));
 		Task ConnectAsync(CancellationToken token = default(CancellationToken));
 		Task ConnectAsync(FtpProfile profile, CancellationToken token = default(CancellationToken));
+		Task<List<FtpProfile>> AutoDetectAsync(bool firstOnly = true, bool cloneConnection = true, CancellationToken token = default(CancellationToken));
 		Task<FtpProfile> AutoConnectAsync(CancellationToken token = default(CancellationToken));
 
 		Task DisconnectAsync(CancellationToken token = default(CancellationToken));
@@ -141,7 +143,7 @@ namespace FluentFTP {
 		FtpListItem DereferenceLink(FtpListItem item, int recMax);
 		void SetWorkingDirectory(string path);
 		string GetWorkingDirectory();
-		long GetFileSize(string path);
+		long GetFileSize(string path, long defaultValue = -1);
 		DateTime GetModifiedTime(string path);
 		void SetModifiedTime(string path, DateTime date);
 
@@ -166,7 +168,7 @@ namespace FluentFTP {
 		Task<FtpListItem> DereferenceLinkAsync(FtpListItem item, CancellationToken token = default(CancellationToken));
 		Task SetWorkingDirectoryAsync(string path, CancellationToken token = default(CancellationToken));
 		Task<string> GetWorkingDirectoryAsync(CancellationToken token = default(CancellationToken));
-		Task<long> GetFileSizeAsync(string path, CancellationToken token = default(CancellationToken));
+		Task<long> GetFileSizeAsync(string path, long defaultValue = -1, CancellationToken token = default(CancellationToken));
 		Task<DateTime> GetModifiedTimeAsync(string path, CancellationToken token = default(CancellationToken));
 
 		Task SetModifiedTimeAsync(string path, DateTime date, CancellationToken token = default(CancellationToken));
@@ -182,14 +184,20 @@ namespace FluentFTP {
 		string[] GetNameListing();
 		string[] GetNameListing(string path);
 
+
 #if ASYNC
 		Task<FtpListItem> GetObjectInfoAsync(string path, bool dateModified = false, CancellationToken token = default(CancellationToken));
 		Task<FtpListItem[]> GetListingAsync(string path, FtpListOption options, CancellationToken token = default(CancellationToken));
 		Task<FtpListItem[]> GetListingAsync(string path, CancellationToken token = default(CancellationToken));
 		Task<FtpListItem[]> GetListingAsync(CancellationToken token = default(CancellationToken));
 		Task<string[]> GetNameListingAsync(string path, CancellationToken token = default(CancellationToken));
-
 		Task<string[]> GetNameListingAsync(CancellationToken token = default(CancellationToken));
+#endif
+
+#if ASYNCPLUS
+		IAsyncEnumerable<FtpListItem> GetListingAsyncEnumerable(string path, FtpListOption options, CancellationToken token = default(CancellationToken), CancellationToken enumToken = default(CancellationToken));
+		IAsyncEnumerable<FtpListItem> GetListingAsyncEnumerable(string path, CancellationToken token = default(CancellationToken), CancellationToken enumToken = default(CancellationToken));
+		IAsyncEnumerable<FtpListItem> GetListingAsyncEnumerable(CancellationToken token = default(CancellationToken), CancellationToken enumToken = default(CancellationToken));
 #endif
 
 
@@ -258,30 +266,11 @@ namespace FluentFTP {
 #endif
 
 		// HASH
-
-		FtpHashAlgorithm GetHashAlgorithm();
-		void SetHashAlgorithm(FtpHashAlgorithm type);
-		FtpHash GetHash(string path);
 		FtpHash GetChecksum(string path, FtpHashAlgorithm algorithm = FtpHashAlgorithm.NONE);
-		string GetMD5(string path);
-		string GetXCRC(string path);
-		string GetXMD5(string path);
-		string GetXSHA1(string path);
-		string GetXSHA256(string path);
-		string GetXSHA512(string path);
 
 #if ASYNC
-		Task<FtpHashAlgorithm> GetHashAlgorithmAsync(CancellationToken token = default(CancellationToken));
-		Task SetHashAlgorithmAsync(FtpHashAlgorithm type, CancellationToken token = default(CancellationToken));
-		Task<FtpHash> GetHashAsync(string path, CancellationToken token = default(CancellationToken));
-		Task<FtpHash> GetChecksumAsync(string path, CancellationToken token = default(CancellationToken), FtpHashAlgorithm algorithm = FtpHashAlgorithm.NONE);
-		Task<string> GetMD5Async(string path, CancellationToken token = default(CancellationToken));
-		Task<string> GetXCRCAsync(string path, CancellationToken token = default(CancellationToken));
-		Task<string> GetXMD5Async(string path, CancellationToken token = default(CancellationToken));
-		Task<string> GetXSHA1Async(string path, CancellationToken token = default(CancellationToken));
-		Task<string> GetXSHA256Async(string path, CancellationToken token = default(CancellationToken));
+		Task<FtpHash> GetChecksumAsync(string path, FtpHashAlgorithm algorithm = FtpHashAlgorithm.NONE, CancellationToken token = default(CancellationToken));
 
-		Task<string> GetXSHA512Async(string path, CancellationToken token = default(CancellationToken));
 #endif
 	}
 }

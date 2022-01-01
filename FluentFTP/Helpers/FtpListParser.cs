@@ -1,19 +1,8 @@
-﻿using FluentFTP.Exceptions;
-using FluentFTP.Helpers.Parsers;
+﻿using FluentFTP.Helpers.Parsers;
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
-using System.Text;
-using System.Text.RegularExpressions;
 
-#if NET45
-using System.Threading.Tasks;
-
-#endif
-
-namespace FluentFTP {
+namespace FluentFTP.Helpers {
 	/// <summary>
 	/// Parses a line from a file listing using the first successful parser, or the specified parser.
 	/// Returns an FtpListItem object representing the parsed line, or null if the line was unable to be parsed.
@@ -27,7 +16,7 @@ namespace FluentFTP {
 		public FtpClient client;
 
 		private static List<FtpParser> parsers = new List<FtpParser> {
-			FtpParser.Unix, FtpParser.Windows, FtpParser.IBM, FtpParser.VMS, FtpParser.NonStop
+			FtpParser.Unix, FtpParser.Windows, FtpParser.VMS, FtpParser.IBMzOS, FtpParser.IBMOS400, FtpParser.NonStop
 		};
 
 		/// <summary>
@@ -83,16 +72,22 @@ namespace FluentFTP {
 				else if (system == FtpOperatingSystem.VMS) {
 					CurrentParser = FtpParser.VMS;
 				}
-				else if (system == FtpOperatingSystem.IBMOS400 || system == FtpOperatingSystem.IBMzOS) {
-					CurrentParser = FtpParser.IBM;
+				else if (system == FtpOperatingSystem.IBMzOS) {
+					CurrentParser = FtpParser.IBMzOS;
 				}
-				else {
+				else if (system == FtpOperatingSystem.IBMOS400) {
+					CurrentParser = FtpParser.IBMOS400;
+				}
+				else
+				{
 					CurrentParser = FtpParser.Unix;
 					client.LogStatus(FtpTraceLevel.Warn, "Cannot auto-detect listing parser for system '" + system + "', using Unix parser");
 				}
 			}
 
 			DetectedParser = CurrentParser;
+
+			client.LogStatus(FtpTraceLevel.Verbose, "Listing parser set to: " + DetectedParser.ToString());
 		}
 
 		/// <summary>
@@ -137,8 +132,12 @@ namespace FluentFTP {
 							result = FtpVMSParser.Parse(client, file);
 							break;
 
-						case FtpParser.IBM:
-							result = FtpIBMParser.Parse(client, file);
+						case FtpParser.IBMzOS:
+							result = FtpIBMzOSParser.Parse(client, file, path);
+							break;
+
+						case FtpParser.IBMOS400:
+							result = FtpIBMOS400Parser.Parse(client, file);
 							break;
 
 						case FtpParser.NonStop:
@@ -164,7 +163,7 @@ namespace FluentFTP {
 				}
 
 				// calc absolute file paths
-				result.CalculateFullFtpPath(client, path, false);
+				result.CalculateFullFtpPath(client, path);
 			}
 
 			return result;
@@ -232,8 +231,11 @@ namespace FluentFTP {
 				case FtpParser.VMS:
 					return FtpVMSParser.IsValid(client, files);
 
-				case FtpParser.IBM:
-					return FtpIBMParser.IsValid(client, files);
+				case FtpParser.IBMzOS:
+					return FtpIBMzOSParser.IsValid(client, files);
+
+				case FtpParser.IBMOS400:
+					return FtpIBMOS400Parser.IsValid(client, files);
 
 				case FtpParser.NonStop:
 					return FtpNonStopParser.IsValid(client, files);

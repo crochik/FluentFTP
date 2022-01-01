@@ -2,6 +2,7 @@
 using System.IO;
 using System.Collections.Generic;
 using FluentFTP.Rules;
+using FluentFTP.Helpers;
 #if (CORE || NETFX)
 using System.Threading;
 #endif
@@ -48,15 +49,15 @@ namespace FluentFTP {
 				throw new ArgumentException("Required parameter is null or blank.", "remoteFolder");
 			}
 
-			LogFunc(nameof(UploadDirectory), new object[] { localFolder, remoteFolder, mode, existsMode, verifyOptions, (rules.IsBlank() ? null : rules.Count + " rules") });
-
-			var results = new List<FtpResult>();
-
 			// ensure the local path ends with slash
 			localFolder = localFolder.EnsurePostfix(Path.DirectorySeparatorChar.ToString());
 
 			// cleanup the remote path
 			remoteFolder = remoteFolder.GetFtpPath().EnsurePostfix("/");
+
+			LogFunc(nameof(UploadDirectory), new object[] { localFolder, remoteFolder, mode, existsMode, verifyOptions, (rules.IsBlank() ? null : rules.Count + " rules") });
+
+			var results = new List<FtpResult>();
 
 			// if the dir does not exist, fail fast
 			if (!Directory.Exists(localFolder)) {
@@ -136,15 +137,15 @@ namespace FluentFTP {
 				throw new ArgumentException("Required parameter is null or blank.", "remoteFolder");
 			}
 
-			LogFunc(nameof(UploadDirectoryAsync), new object[] { localFolder, remoteFolder, mode, existsMode, verifyOptions, (rules.IsBlank() ? null : rules.Count + " rules") });
-
-			var results = new List<FtpResult>();
-
 			// ensure the local path ends with slash
 			localFolder = localFolder.EnsurePostfix(Path.DirectorySeparatorChar.ToString());
 
 			// cleanup the remote path
 			remoteFolder = remoteFolder.GetFtpPath().EnsurePostfix("/");
+
+			LogFunc(nameof(UploadDirectoryAsync), new object[] { localFolder, remoteFolder, mode, existsMode, verifyOptions, (rules.IsBlank() ? null : rules.Count + " rules") });
+
+			var results = new List<FtpResult>();
 
 			// if the dir does not exist, fail fast
 			if (!Directory.Exists(localFolder)) {
@@ -390,7 +391,7 @@ namespace FluentFTP {
 
 			// check if the file already exists on the server
 			existsModeToUse = existsMode;
-			var fileExists = FtpExtensions.FileExistsInListing(remoteListing, result.RemotePath);
+			var fileExists = FileListings.FileExistsInListing(remoteListing, result.RemotePath);
 
 			// if we want to skip uploaded files and the file already exists, mark its skipped
 			if (existsMode == FtpRemoteExists.Skip && fileExists) {
@@ -404,7 +405,7 @@ namespace FluentFTP {
 
 			// in any mode if the file does not exist, mark that exists check is not required
 			if (!fileExists) {
-				existsModeToUse = existsMode == FtpRemoteExists.Append ? FtpRemoteExists.AppendNoCheck : FtpRemoteExists.NoCheck;
+				existsModeToUse = existsMode == FtpRemoteExists.Resume ? FtpRemoteExists.ResumeNoCheck : FtpRemoteExists.NoCheck;
 			}
 			return true;
 		}

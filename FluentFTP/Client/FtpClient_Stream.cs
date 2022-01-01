@@ -12,6 +12,7 @@ using System.Globalization;
 using System.Security.Authentication;
 using System.Net;
 using FluentFTP.Proxy;
+using FluentFTP.Helpers;
 #if !CORE
 using System.Web;
 #endif
@@ -39,7 +40,6 @@ namespace FluentFTP {
 		/// </summary>
 		/// <param name="command">The command to execute</param>
 		/// <returns>The servers reply to the command</returns>
-		/// <example><code source="..\Examples\Execute.cs" lang="cs" /></example>
 		public FtpReply Execute(string command) {
 			FtpReply reply;
 
@@ -72,6 +72,11 @@ namespace FluentFTP {
 					commandTxt = "PASS ***";
 				}
 
+				// A CWD will invalidate the cached value.
+				if (command.StartsWith("CWD ", StringComparison.Ordinal)) {
+					_LastWorkingDir = null;
+				}
+
 				LogLine(FtpTraceLevel.Info, "Command:  " + commandTxt);
 
 				// send command to FTP server
@@ -95,7 +100,6 @@ namespace FluentFTP {
 		/// <param name="callback">The <see cref="AsyncCallback"/> method</param>
 		/// <param name="state">State object</param>
 		/// <returns>IAsyncResult</returns>
-		/// <example><code source="..\Examples\BeginExecute.cs" lang="cs" /></example>
 		public IAsyncResult BeginExecute(string command, AsyncCallback callback, object state) {
 			AsyncExecute func;
 			IAsyncResult ar;
@@ -113,7 +117,6 @@ namespace FluentFTP {
 		/// </summary>
 		/// <param name="ar">IAsyncResult returned from BeginExecute</param>
 		/// <returns>FtpReply object (never null).</returns>
-		/// <example><code source="..\Examples\BeginExecute.cs" lang="cs" /></example>
 		public FtpReply EndExecute(IAsyncResult ar) {
 			return GetAsyncDelegate<AsyncExecute>(ar).EndInvoke(ar);
 		}
@@ -222,7 +225,6 @@ namespace FluentFTP {
 		/// indefinitely waiting for a server reply that is never coming.
 		/// </summary>
 		/// <returns>FtpReply representing the response from the server</returns>
-		/// <example><code source="..\Examples\BeginGetReply.cs" lang="cs" /></example>
 		public FtpReply GetReply() {
 			var reply = new FtpReply();
 			string buf;
@@ -256,6 +258,7 @@ namespace FluentFTP {
 
 				// if reply received
 				if (reply.Code != null) {
+
 					// hide sensitive data from logs
 					var logMsg = reply.Message;
 					if (!FtpTrace.LogUserName && reply.Code == "331" && logMsg.StartsWith("User ", StringComparison.Ordinal) && logMsg.Contains(" OK")) {
@@ -297,7 +300,6 @@ namespace FluentFTP {
 		/// indefinitely waiting for a server reply that is never coming.
 		/// </summary>
 		/// <returns>FtpReply representing the response from the server</returns>
-		/// <example><code source="..\Examples\BeginGetReply.cs" lang="cs" /></example>
 		public async Task<FtpReply> GetReplyAsync(CancellationToken token) {
 			var reply = new FtpReply();
 			string buf;
@@ -338,6 +340,8 @@ namespace FluentFTP {
 				LogLine(FtpTraceLevel.Info, "Response: " + reply.Code + " " + logMsg);
 			}
 
+			LastReply = reply;
+
 			return reply;
 		}
 #endif
@@ -358,7 +362,6 @@ namespace FluentFTP {
 
 			FtpDataStream stream = null;
 			FtpReply reply;
-			Match m;
 			string host = null;
 			var port = 0;
 
@@ -366,49 +369,81 @@ namespace FluentFTP {
 				throw new InvalidOperationException("The control connection stream is null! Generally this means there is no connection to the server. Cannot open a passive data stream.");
 			}
 
-			if ((type == FtpDataConnectionType.EPSV || type == FtpDataConnectionType.AutoPassive) && !_EPSVNotSupported) {
-				// execute EPSV to try enhanced-passive mode
-				if (!(reply = Execute("EPSV")).Success) {
-					// if we're connected with IPv4 and data channel type is AutoPassive then fallback to IPv4
-					if ((reply.Type == FtpResponseType.TransientNegativeCompletion || reply.Type == FtpResponseType.PermanentNegativeCompletion)
-						&& type == FtpDataConnectionType.AutoPassive
-						&& m_stream != null
-						&& m_stream.LocalEndPoint.AddressFamily == AddressFamily.InterNetwork) {
-						// mark EPSV not supported so we do not try EPSV again during this connection
-						_EPSVNotSupported = true;
-						return OpenPassiveDataStream(FtpDataConnectionType.PASV, command, restart);
+			for (int a = 0; a <= m_PassiveMaxAttempts; ) {
+
+				if ((type == FtpDataConnectionType.EPSV || type == FtpDataConnectionType.AutoPassive) && !_EPSVNotSupported) {
+
+					// execute EPSV to try enhanced-passive mode
+					if (!(reply = Execute("EPSV")).Success) {
+
+						// if we're connected with IPv4 and data channel type is AutoPassive then fallback to IPv4
+						if ((reply.Type == FtpResponseType.TransientNegativeCompletion || reply.Type == FtpResponseType.PermanentNegativeCompletion)
+							&& type == FtpDataConnectionType.AutoPassive
+							&& m_stream != null
+							&& m_stream.LocalEndPoint.AddressFamily == AddressFamily.InterNetwork) {
+							// mark EPSV not supported so we do not try EPSV again during this connection
+							_EPSVNotSupported = true;
+							return OpenPassiveDataStream(FtpDataConnectionType.PASV, command, restart);
+						}
+
+						// throw this unknown error
+						throw new FtpCommandException(reply);
 					}
 
-					// throw this unknown error
-					throw new FtpCommandException(reply);
+					// read the connection port from the EPSV response
+					GetEnhancedPassivePort(reply, out host, out port);
+
+				}
+				else {
+					if (m_stream.LocalEndPoint.AddressFamily != AddressFamily.InterNetwork) {
+						throw new FtpException("Only IPv4 is supported by the PASV command. Use EPSV instead.");
+					}
+
+					// execute PRET before passive if server requires it
+					if (HasFeature(FtpCapability.PRET)) {
+						reply = Execute("PRET " + command);
+					}
+
+					// execute PASV to try passive mode
+					if (!(reply = Execute("PASV")).Success) {
+						throw new FtpCommandException(reply);
+					}
+
+					// get the passive port taking proxy config into account (if any)
+					GetPassivePort(type, reply, out host, out port);
+
 				}
 
-				// read the connection port from the EPSV response
-				GetEnhancedPassivePort(reply, out host, out port);
 
-			}
-			else {
-				if (m_stream.LocalEndPoint.AddressFamily != AddressFamily.InterNetwork) {
-					throw new FtpException("Only IPv4 is supported by the PASV command. Use EPSV instead.");
+
+				// break if too many tries
+				a++;
+				if (a >= m_PassiveMaxAttempts) {
+					throw new FtpException("Could not find a suitable port for PASV/EPSV Data Connection after trying "+ m_PassiveMaxAttempts + " times.");
 				}
 
-				// execute PRET before passive if server requires it
-				if (HasFeature(FtpCapability.PRET)) {
-					reply = Execute("PRET " + command);
+				// accept first port if not configured
+				if (m_PassiveBlockedPorts.IsBlank()) {
+					break;
 				}
+				else {
 
-				// execute PASV to try passive mode
-				if (!(reply = Execute("PASV")).Success) {
-					throw new FtpCommandException(reply);
+					// check port against blacklist if configured
+					if (!m_PassiveBlockedPorts.Contains(port)) {
+
+						// blacklist does not port, accept it
+						break;
+					}
+					else {
+
+						// blacklist contains port, try again
+						continue;
+					}
 				}
-
-				// get the passive port taking proxy config into account (if any)
-				GetPassivePort(type, reply, out host, out port);
 
 			}
 
 			stream = new FtpDataStream(this);
-			stream.Client = this;
 			stream.ConnectTimeout = DataConnectionConnectTimeout;
 			stream.ReadTimeout = DataConnectionReadTimeout;
 			Connect(stream, host, port, InternetProtocolVersions);
@@ -462,7 +497,6 @@ namespace FluentFTP {
 
 			FtpDataStream stream = null;
 			FtpReply reply;
-			Match m;
 			string host = null;
 			var port = 0;
 
@@ -471,49 +505,77 @@ namespace FluentFTP {
 			}
 
 
-			if ((type == FtpDataConnectionType.EPSV || type == FtpDataConnectionType.AutoPassive) && !_EPSVNotSupported) {
-				// execute EPSV to try enhanced-passive mode
-				if (!(reply = await ExecuteAsync("EPSV", token)).Success) {
-					// if we're connected with IPv4 and data channel type is AutoPassive then fallback to IPv4
-					if ((reply.Type == FtpResponseType.TransientNegativeCompletion || reply.Type == FtpResponseType.PermanentNegativeCompletion)
-						&& type == FtpDataConnectionType.AutoPassive
-						&& m_stream != null
-						&& m_stream.LocalEndPoint.AddressFamily == AddressFamily.InterNetwork) {
-						// mark EPSV not supported so we do not try EPSV again during this connection
-						_EPSVNotSupported = true;
-						return await OpenPassiveDataStreamAsync(FtpDataConnectionType.PASV, command, restart, token);
+			for (int a = 0; a <= m_PassiveMaxAttempts;) {
+
+				if ((type == FtpDataConnectionType.EPSV || type == FtpDataConnectionType.AutoPassive) && !_EPSVNotSupported) {
+					// execute EPSV to try enhanced-passive mode
+					if (!(reply = await ExecuteAsync("EPSV", token)).Success) {
+						// if we're connected with IPv4 and data channel type is AutoPassive then fallback to IPv4
+						if ((reply.Type == FtpResponseType.TransientNegativeCompletion || reply.Type == FtpResponseType.PermanentNegativeCompletion)
+							&& type == FtpDataConnectionType.AutoPassive
+							&& m_stream != null
+							&& m_stream.LocalEndPoint.AddressFamily == AddressFamily.InterNetwork) {
+							// mark EPSV not supported so we do not try EPSV again during this connection
+							_EPSVNotSupported = true;
+							return await OpenPassiveDataStreamAsync(FtpDataConnectionType.PASV, command, restart, token);
+						}
+
+						// throw this unknown error
+						throw new FtpCommandException(reply);
 					}
 
-					// throw this unknown error
-					throw new FtpCommandException(reply);
+					// read the connection port from the EPSV response
+					GetEnhancedPassivePort(reply, out host, out port);
+
+				}
+				else {
+					if (m_stream.LocalEndPoint.AddressFamily != AddressFamily.InterNetwork) {
+						throw new FtpException("Only IPv4 is supported by the PASV command. Use EPSV instead.");
+					}
+
+					// execute PRET before passive if server requires it
+					if (HasFeature(FtpCapability.PRET)) {
+						reply = await ExecuteAsync("PRET " + command, token);
+					}
+
+					// execute PASV to try passive mode
+					if (!(reply = await ExecuteAsync("PASV", token)).Success) {
+						throw new FtpCommandException(reply);
+					}
+
+					// get the passive port taking proxy config into account (if any)
+					GetPassivePort(type, reply, out host, out port);
+
 				}
 
-				// read the connection port from the EPSV response
-				GetEnhancedPassivePort(reply, out host, out port);
 
-			}
-			else {
-				if (m_stream.LocalEndPoint.AddressFamily != AddressFamily.InterNetwork) {
-					throw new FtpException("Only IPv4 is supported by the PASV command. Use EPSV instead.");
+				// break if too many tries
+				a++;
+				if (a >= m_PassiveMaxAttempts) {
+					throw new FtpException("Could not find a suitable port for PASV/EPSV Data Connection after trying " + m_PassiveMaxAttempts + " times.");
 				}
 
-				// execute PRET before passive if server requires it
-				if (HasFeature(FtpCapability.PRET)) {
-					reply = await ExecuteAsync("PRET " + command, token);
+				// accept first port if not configured
+				if (m_PassiveBlockedPorts.IsBlank()) {
+					break;
 				}
+				else {
 
-				// execute PASV to try passive mode
-				if (!(reply = await ExecuteAsync("PASV", token)).Success) {
-					throw new FtpCommandException(reply);
+					// check port against blacklist if configured
+					if (!m_PassiveBlockedPorts.Contains(port)) {
+
+						// blacklist does not port, accept it
+						break;
+					}
+					else {
+
+						// blacklist contains port, try again
+						continue;
+					}
 				}
-
-				// get the passive port taking proxy config into account (if any)
-				GetPassivePort(type, reply, out host, out port);
-
 			}
 
 			stream = new FtpDataStream(this);
-			stream.Client = this;
 			stream.ConnectTimeout = DataConnectionConnectTimeout;
 			stream.ReadTimeout = DataConnectionReadTimeout;
 			await ConnectAsync(stream, host, port, InternetProtocolVersions, token);
@@ -538,7 +600,7 @@ namespace FluentFTP {
 
 #if !NO_SSL
 			// this needs to take place after the command is executed
-			if (m_dataConnectionEncryption && m_encryptionmode != FtpEncryptionMode.None) {
+			if (m_dataConnectionEncryption && m_encryptionmode != FtpEncryptionMode.None && !_ConnectionFTPSFailure) {
 				await stream.ActivateEncryptionAsync(m_host,
 					ClientCertificates.Count > 0 ? ClientCertificates : null,
 					m_SslProtocols);
@@ -569,8 +631,16 @@ namespace FluentFTP {
 					throw new FtpException("Failed to get the EPSV port from: " + reply.Message);
 				}
 			}
+			// If ESPV is responded with Entering Extended Passive. The IP must remain the same.
+			/* Example:
+			Command: EPSV
+			Response: 229 Entering Extended Passive Mode(|||10016|)
 
-			host = m_host;
+			If we set the host to ftp.host.com and ftp.host.com has multiple ip's we may end up with the wrong ip.
+			Making sure that we use the same IP.
+			host = m_host; 
+			*/
+			host = SocketRemoteEndPoint.Address.ToString();
 			port = int.Parse(m.Groups["port"].Value);
 		}
 
@@ -631,7 +701,6 @@ namespace FluentFTP {
 			LogFunc(nameof(OpenActiveDataStream), new object[] { type, command, restart });
 
 			var stream = new FtpDataStream(this);
-			stream.Client = this;
 			FtpReply reply;
 #if !CORE
 			IAsyncResult ar;
@@ -748,7 +817,6 @@ namespace FluentFTP {
 			LogFunc(nameof(OpenActiveDataStreamAsync), new object[] { type, command, restart });
 
 			var stream = new FtpDataStream(this);
-			stream.Client = this;
 			FtpReply reply;
 
 #if !CORE
@@ -841,7 +909,7 @@ namespace FluentFTP {
 #endif
 
 #if !NO_SSL
-			if (m_dataConnectionEncryption && m_encryptionmode != FtpEncryptionMode.None) {
+			if (m_dataConnectionEncryption && m_encryptionmode != FtpEncryptionMode.None && !_ConnectionFTPSFailure) {
 				await stream.ActivateEncryptionAsync(m_host,
 					ClientCertificates.Count > 0 ? ClientCertificates : null,
 					m_SslProtocols);
@@ -1024,7 +1092,7 @@ namespace FluentFTP {
 		/// </summary>
 		/// <param name="stream"></param>
 		private void StartListeningOnPort(FtpDataStream stream) {
-			if (m_ActivePorts == null || !m_ActivePorts.Any()) {
+			if (m_ActivePorts.IsBlank()) {
 				// Use random port
 				stream.Listen(m_stream.LocalEndPoint.Address, 0);
 			}
@@ -1071,7 +1139,6 @@ namespace FluentFTP {
 		/// </summary>
 		/// <param name="path">The full or relative path of the file</param>
 		/// <returns>A stream for reading the file on the server</returns>
-		/// <example><code source="..\Examples\OpenRead.cs" lang="cs" /></example>
 		public Stream OpenRead(string path) {
 			return OpenRead(path, FtpDataType.Binary, 0, true);
 		}
@@ -1082,7 +1149,6 @@ namespace FluentFTP {
 		/// <param name="path">The full or relative path of the file</param>
 		/// <param name="type">ASCII/Binary</param>
 		/// <returns>A stream for reading the file on the server</returns>
-		/// <example><code source="..\Examples\OpenRead.cs" lang="cs" /></example>
 		public Stream OpenRead(string path, FtpDataType type) {
 			return OpenRead(path, type, 0, true);
 		}
@@ -1094,7 +1160,6 @@ namespace FluentFTP {
 		/// <param name="type">ASCII/Binary</param>
 		/// <param name="checkIfFileExists">Only set this to false if you are SURE that the file does not exist. If true, it reads the file size and saves it into the stream length.</param>
 		/// <returns>A stream for reading the file on the server</returns>
-		/// <example><code source="..\Examples\OpenRead.cs" lang="cs" /></example>
 		public Stream OpenRead(string path, FtpDataType type, bool checkIfFileExists) {
 			return OpenRead(path, type, 0, checkIfFileExists);
 		}
@@ -1106,7 +1171,6 @@ namespace FluentFTP {
 		/// <param name="type">ASCII/Binary</param>
 		/// <param name="restart">Resume location</param>
 		/// <returns>A stream for reading the file on the server</returns>
-		/// <example><code source="..\Examples\OpenRead.cs" lang="cs" /></example>
 		public virtual Stream OpenRead(string path, FtpDataType type, long restart) {
 			return OpenRead(path, type, restart, true);
 		}
@@ -1117,7 +1181,6 @@ namespace FluentFTP {
 		/// <param name="path">The full or relative path of the file</param>
 		/// <param name="restart">Resume location</param>
 		/// <returns>A stream for reading the file on the server</returns>
-		/// <example><code source="..\Examples\OpenRead.cs" lang="cs" /></example>
 		public Stream OpenRead(string path, long restart) {
 			return OpenRead(path, FtpDataType.Binary, restart, true);
 		}
@@ -1129,7 +1192,6 @@ namespace FluentFTP {
 		/// <param name="restart">Resume location</param>
 		/// <param name="checkIfFileExists">Only set this to false if you are SURE that the file does not exist. If true, it reads the file size and saves it into the stream length.</param>
 		/// <returns>A stream for reading the file on the server</returns>
-		/// <example><code source="..\Examples\OpenRead.cs" lang="cs" /></example>
 		public Stream OpenRead(string path, long restart, bool checkIfFileExists) {
 			return OpenRead(path, FtpDataType.Binary, restart, checkIfFileExists);
 		}
@@ -1142,12 +1204,13 @@ namespace FluentFTP {
 		/// <param name="restart">Resume location</param>
 		/// <param name="checkIfFileExists">Only set this to false if you are SURE that the file does not exist. If true, it reads the file size and saves it into the stream length.</param>
 		/// <returns>A stream for reading the file on the server</returns>
-		/// <example><code source="..\Examples\OpenRead.cs" lang="cs" /></example>
 		public virtual Stream OpenRead(string path, FtpDataType type, long restart, bool checkIfFileExists) {
 			// verify args
 			if (path.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "path");
 			}
+
+			path = path.GetFtpPath();
 
 			LogFunc(nameof(OpenRead), new object[] { path, type, restart });
 
@@ -1168,10 +1231,10 @@ namespace FluentFTP {
 					client = this;
 				}
 
-				client.SetDataType(type);
-
 				length = checkIfFileExists ? client.GetFileSize(path) : 0;
-				stream = client.OpenDataStream("RETR " + path.GetFtpPath(), restart);
+
+				client.SetDataType(type);
+				stream = client.OpenDataStream("RETR " + path, restart);
 #if !CORE14
 			}
 #endif
@@ -1189,80 +1252,6 @@ namespace FluentFTP {
 			return stream;
 		}
 
-#if !ASYNC
-		/// <summary>
-		/// Begins an asynchronous operation to open the specified file for reading
-		/// </summary>
-		/// <param name="path">The full or relative path of the file</param>
-		/// <param name="callback">Async Callback</param>
-		/// <param name="state">State object</param>
-		/// <returns>IAsyncResult</returns>
-		/// <example><code source="..\Examples\BeginOpenRead.cs" lang="cs" /></example>
-		public IAsyncResult BeginOpenRead(string path, AsyncCallback callback, object state) {
-			return BeginOpenRead(path, FtpDataType.Binary, 0, callback, state);
-		}
-
-		/// <summary>
-		/// Opens the specified file for reading
-		/// </summary>
-		/// <param name="path">The full or relative path of the file</param>
-		/// <param name="type">ASCII/Binary</param>
-		/// <param name="callback">Async Callback</param>
-		/// <param name="state">State object</param>
-		/// <returns>IAsyncResult</returns>
-		/// <example><code source="..\Examples\BeginOpenRead.cs" lang="cs" /></example>
-		public IAsyncResult BeginOpenRead(string path, FtpDataType type, AsyncCallback callback, object state) {
-			return BeginOpenRead(path, type, 0, callback, state);
-		}
-
-		/// <summary>
-		/// Begins an asynchronous operation to open the specified file for reading
-		/// </summary>
-		/// <param name="path">The full or relative path of the file</param>
-		/// <param name="restart">Resume location</param>
-		/// <param name="callback">Async Callback</param>
-		/// <param name="state">State object</param>
-		/// <returns>IAsyncResult</returns>
-		/// <example><code source="..\Examples\BeginOpenRead.cs" lang="cs" /></example>
-		public IAsyncResult BeginOpenRead(string path, long restart, AsyncCallback callback, object state) {
-			return BeginOpenRead(path, FtpDataType.Binary, restart, callback, state);
-		}
-
-		private delegate Stream AsyncOpenRead(string path, FtpDataType type, long restart);
-
-		/// <summary>
-		/// Begins an asynchronous operation to open the specified file for reading
-		/// </summary>
-		/// <param name="path">The full or relative path of the file</param>
-		/// <param name="type">ASCII/Binary</param>
-		/// <param name="restart">Resume location</param>
-		/// <param name="callback">Async Callback</param>
-		/// <param name="state">State object</param>
-		/// <returns>IAsyncResult</returns>
-		/// <example><code source="..\Examples\BeginOpenRead.cs" lang="cs" /></example>
-		public IAsyncResult BeginOpenRead(string path, FtpDataType type, long restart, AsyncCallback callback, object state) {
-			AsyncOpenRead func;
-			IAsyncResult ar;
-
-			lock (m_asyncmethods) {
-				ar = (func = new AsyncOpenRead(OpenRead)).BeginInvoke(path, type, restart, callback, state);
-				m_asyncmethods.Add(ar, func);
-			}
-
-			return ar;
-		}
-
-		/// <summary>
-		/// Ends a call to <see cref="o:BeginOpenRead"/>
-		/// </summary>
-		/// <param name="ar"><see cref="IAsyncResult"/> returned from <see cref="o:BeginOpenRead"/></param>
-		/// <returns>A readable stream of the remote file</returns>
-		/// <example><code source="..\Examples\BeginOpenRead.cs" lang="cs" /></example>
-		public Stream EndOpenRead(IAsyncResult ar) {
-			return GetAsyncDelegate<AsyncOpenRead>(ar).EndInvoke(ar);
-		}
-
-#endif
 #if ASYNC
 		/// <summary>
 		/// Opens the specified file for reading asynchronously
@@ -1278,6 +1267,8 @@ namespace FluentFTP {
 			if (path.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "path");
 			}
+
+			path = path.GetFtpPath();
 
 			LogFunc(nameof(OpenReadAsync), new object[] { path, type, restart });
 
@@ -1295,9 +1286,10 @@ namespace FluentFTP {
 				client = this;
 			}
 
+			length = checkIfFileExists ? await client.GetFileSizeAsync(path, -1, token) : 0;
+
 			await client.SetDataTypeAsync(type, token);
-			length = checkIfFileExists ? await client.GetFileSizeAsync(path, token) : 0;
-			stream = await client.OpenDataStreamAsync("RETR " + path.GetFtpPath(), restart, token);
+			stream = await client.OpenDataStreamAsync("RETR " + path, restart, token);
 
 			if (stream != null) {
 				if (length > 0) {
@@ -1367,7 +1359,6 @@ namespace FluentFTP {
 		/// </summary>
 		/// <param name="path">Full or relative path of the file</param>
 		/// <returns>A stream for writing to the file on the server</returns>
-		/// <example><code source="..\Examples\OpenWrite.cs" lang="cs" /></example>
 		public Stream OpenWrite(string path) {
 			return OpenWrite(path, FtpDataType.Binary, true);
 		}
@@ -1378,7 +1369,6 @@ namespace FluentFTP {
 		/// <param name="path">Full or relative path of the file</param>
 		/// <param name="type">ASCII/Binary</param>
 		/// <returns>A stream for writing to the file on the server</returns>
-		/// <example><code source="..\Examples\OpenWrite.cs" lang="cs" /></example>
 		public virtual Stream OpenWrite(string path, FtpDataType type) {
 			return OpenWrite(path, type, true);
 		}
@@ -1390,12 +1380,13 @@ namespace FluentFTP {
 		/// <param name="type">ASCII/Binary</param>
 		/// <param name="checkIfFileExists">Only set this to false if you are SURE that the file does not exist. If true, it reads the file size and saves it into the stream length.</param>
 		/// <returns>A stream for writing to the file on the server</returns>
-		/// <example><code source="..\Examples\OpenWrite.cs" lang="cs" /></example>
 		public virtual Stream OpenWrite(string path, FtpDataType type, bool checkIfFileExists) {
 			// verify args
 			if (path.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "path");
 			}
+
+			path = path.GetFtpPath();
 
 			LogFunc(nameof(OpenWrite), new object[] { path, type });
 
@@ -1418,7 +1409,7 @@ namespace FluentFTP {
 
 				client.SetDataType(type);
 				length = checkIfFileExists ? client.GetFileSize(path) : 0;
-				stream = client.OpenDataStream("STOR " + path.GetFtpPath(), 0);
+				stream = client.OpenDataStream("STOR " + path, 0);
 
 				if (length > 0 && stream != null) {
 					stream.SetLength(length);
@@ -1431,53 +1422,6 @@ namespace FluentFTP {
 			return stream;
 		}
 
-#if !ASYNC
-		/// <summary>
-		/// Begins an asynchronous operation to open the specified file for writing
-		/// </summary>
-		/// <param name="path">Full or relative path of the file</param>
-		/// <param name="callback">Async callback</param>
-		/// <param name="state">State object</param>
-		/// <returns>IAsyncResult</returns>
-		/// <example><code source="..\Examples\BeginOpenWrite.cs" lang="cs" /></example>
-		public IAsyncResult BeginOpenWrite(string path, AsyncCallback callback, object state) {
-			return BeginOpenWrite(path, FtpDataType.Binary, callback, state);
-		}
-
-		private delegate Stream AsyncOpenWrite(string path, FtpDataType type);
-
-		/// <summary>
-		/// Begins an asynchronous operation to open the specified file for writing
-		/// </summary>
-		/// <param name="path">Full or relative path of the file</param>
-		/// <param name="type">ASCII/Binary</param>
-		/// <param name="callback">Async callback</param>
-		/// <param name="state">State object</param>
-		/// <returns>IAsyncResult</returns>
-		/// <example><code source="..\Examples\BeginOpenWrite.cs" lang="cs" /></example>
-		public IAsyncResult BeginOpenWrite(string path, FtpDataType type, AsyncCallback callback, object state) {
-			AsyncOpenWrite func;
-			IAsyncResult ar;
-
-			lock (m_asyncmethods) {
-				ar = (func = new AsyncOpenWrite(OpenWrite)).BeginInvoke(path, type, callback, state);
-				m_asyncmethods.Add(ar, func);
-			}
-
-			return ar;
-		}
-
-		/// <summary>
-		/// Ends a call to <see cref="o:BeginOpenWrite"/>
-		/// </summary>
-		/// <param name="ar"><see cref="IAsyncResult"/> returned from <see cref="o:BeginOpenWrite"/></param>
-		/// <returns>A writable stream</returns>
-		/// <example><code source="..\Examples\BeginOpenWrite.cs" lang="cs" /></example>
-		public Stream EndOpenWrite(IAsyncResult ar) {
-			return GetAsyncDelegate<AsyncOpenWrite>(ar).EndInvoke(ar);
-		}
-
-#endif
 #if ASYNC
 		/// <summary>
 		/// Opens the specified file for writing. Please call GetReply() after you have successfully transfered the file to read the "OK" command sent by the server and prevent stale data on the socket.
@@ -1492,6 +1436,8 @@ namespace FluentFTP {
 			if (path.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "path");
 			}
+
+			path = path.GetFtpPath();
 
 			LogFunc(nameof(OpenWriteAsync), new object[] { path, type });
 
@@ -1510,8 +1456,8 @@ namespace FluentFTP {
 			}
 
 			await client.SetDataTypeAsync(type, token);
-			length = checkIfFileExists ? await client.GetFileSizeAsync(path, token) : 0;
-			stream = await client.OpenDataStreamAsync("STOR " + path.GetFtpPath(), 0, token);
+			length = checkIfFileExists ? await client.GetFileSizeAsync(path, -1, token) : 0;
+			stream = await client.OpenDataStreamAsync("STOR " + path, 0, token);
 
 			if (length > 0 && stream != null) {
 				stream.SetLength(length);
@@ -1551,7 +1497,6 @@ namespace FluentFTP {
 		/// </summary>
 		/// <param name="path">The full or relative path to the file to be opened</param>
 		/// <returns>A stream for writing to the file on the server</returns>
-		/// <example><code source="..\Examples\OpenAppend.cs" lang="cs" /></example>
 		public Stream OpenAppend(string path) {
 			return OpenAppend(path, FtpDataType.Binary, true);
 		}
@@ -1562,7 +1507,6 @@ namespace FluentFTP {
 		/// <param name="path">The full or relative path to the file to be opened</param>
 		/// <param name="type">ASCII/Binary</param>
 		/// <returns>A stream for writing to the file on the server</returns>
-		/// <example><code source="..\Examples\OpenAppend.cs" lang="cs" /></example>
 		public virtual Stream OpenAppend(string path, FtpDataType type) {
 			return OpenAppend(path, type, true);
 		}
@@ -1574,12 +1518,13 @@ namespace FluentFTP {
 		/// <param name="type">ASCII/Binary</param>
 		/// <param name="checkIfFileExists">Only set this to false if you are SURE that the file does not exist. If true, it reads the file size and saves it into the stream length.</param>
 		/// <returns>A stream for writing to the file on the server</returns>
-		/// <example><code source="..\Examples\OpenAppend.cs" lang="cs" /></example>
 		public virtual Stream OpenAppend(string path, FtpDataType type, bool checkIfFileExists) {
 			// verify args
 			if (path.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "path");
 			}
+
+			path = path.GetFtpPath();
 
 			LogFunc(nameof(OpenAppend), new object[] { path, type });
 
@@ -1602,7 +1547,7 @@ namespace FluentFTP {
 
 				client.SetDataType(type);
 				length = checkIfFileExists ? client.GetFileSize(path) : 0;
-				stream = client.OpenDataStream("APPE " + path.GetFtpPath(), 0);
+				stream = client.OpenDataStream("APPE " + path, 0);
 
 				if (length > 0 && stream != null) {
 					stream.SetLength(length);
@@ -1616,53 +1561,6 @@ namespace FluentFTP {
 			return stream;
 		}
 
-#if !ASYNC
-		/// <summary>
-		/// Begins an asynchronous operation to open the specified file for appending
-		/// </summary>
-		/// <param name="path">Full or relative path of the file</param>
-		/// <param name="callback">Async callback</param>
-		/// <param name="state">State object</param>
-		/// <returns>IAsyncResult</returns>
-		/// <example><code source="..\Examples\BeginOpenAppend.cs" lang="cs" /></example>
-		public IAsyncResult BeginOpenAppend(string path, AsyncCallback callback, object state) {
-			return BeginOpenAppend(path, FtpDataType.Binary, callback, state);
-		}
-
-		private delegate Stream AsyncOpenAppend(string path, FtpDataType type);
-
-		/// <summary>
-		/// Begins an asynchronous operation to open the specified file for appending
-		/// </summary>
-		/// <param name="path">Full or relative path of the file</param>
-		/// <param name="type">ASCII/Binary</param>
-		/// <param name="callback">Async callback</param>
-		/// <param name="state">State object</param>
-		/// <returns>IAsyncResult</returns>
-		/// <example><code source="..\Examples\BeginOpenAppend.cs" lang="cs" /></example>
-		public IAsyncResult BeginOpenAppend(string path, FtpDataType type, AsyncCallback callback, object state) {
-			IAsyncResult ar;
-			AsyncOpenAppend func;
-
-			lock (m_asyncmethods) {
-				ar = (func = new AsyncOpenAppend(OpenAppend)).BeginInvoke(path, type, callback, state);
-				m_asyncmethods.Add(ar, func);
-			}
-
-			return ar;
-		}
-
-		/// <summary>
-		/// Ends a call to <see cref="o:BeginOpenAppend"/>
-		/// </summary>
-		/// <param name="ar"><see cref="IAsyncResult"/> returned from <see cref="o:BeginOpenAppend"/></param>
-		/// <returns>A writable stream</returns>
-		/// <example><code source="..\Examples\BeginOpenAppend.cs" lang="cs" /></example>
-		public Stream EndOpenAppend(IAsyncResult ar) {
-			return GetAsyncDelegate<AsyncOpenAppend>(ar).EndInvoke(ar);
-		}
-
-#endif
 #if ASYNC
 		/// <summary>
 		/// Opens the specified file to be appended asynchronously
@@ -1677,6 +1575,8 @@ namespace FluentFTP {
 			if (path.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "path");
 			}
+
+			path = path.GetFtpPath();
 
 			LogFunc(nameof(OpenAppendAsync), new object[] { path, type });
 
@@ -1696,8 +1596,8 @@ namespace FluentFTP {
 			}
 
 			await client.SetDataTypeAsync(type, token);
-			length = checkIfFileExists ? await client.GetFileSizeAsync(path, token) : 0;
-			stream = await client.OpenDataStreamAsync("APPE " + path.GetFtpPath(), 0, token);
+			length = checkIfFileExists ? await client.GetFileSizeAsync(path, -1, token) : 0;
+			stream = await client.OpenDataStreamAsync("APPE " + path, 0, token);
 
 			if (length > 0 && stream != null) {
 				stream.SetLength(length);
@@ -1744,13 +1644,7 @@ namespace FluentFTP {
 			lock (m_lock) {
 #endif
 
-				// FIX : #291 only change the data type if different
-				if (CurrentDataType != type || ForceSetDataType) {
-					// FIX : #318 always set the type when we create a new connection
-					ForceSetDataType = false;
-
-					SetDataTypeNoLock(type);
-				}
+				SetDataTypeNoLock(type);
 
 #if !CORE14
 			}
@@ -1764,60 +1658,35 @@ namespace FluentFTP {
 		/// <param name="type">ASCII/Binary.</param>
 		/// <remarks>This method doesn't do any locking to prevent recursive lock scenarios.  Callers must do their own locking.</remarks>
 		private void SetDataTypeNoLock(FtpDataType type) {
-			FtpReply reply;
-			switch (type) {
-				case FtpDataType.ASCII:
-					if (!(reply = Execute("TYPE A")).Success) {
-						throw new FtpCommandException(reply);
-					}
+			// FIX : #291 only change the data type if different
+			if (CurrentDataType != type || ForceSetDataType) {
+				// FIX : #318 always set the type when we create a new connection
+				ForceSetDataType = false;
 
-					break;
+				FtpReply reply;
+				switch (type) {
+					case FtpDataType.ASCII:
+						if (!(reply = Execute("TYPE A")).Success) {
+							throw new FtpCommandException(reply);
+						}
 
-				case FtpDataType.Binary:
-					if (!(reply = Execute("TYPE I")).Success) {
-						throw new FtpCommandException(reply);
-					}
+						break;
 
-					break;
+					case FtpDataType.Binary:
+						if (!(reply = Execute("TYPE I")).Success) {
+							throw new FtpCommandException(reply);
+						}
 
-				default:
-					throw new FtpException("Unsupported data type: " + type.ToString());
+						break;
+
+					default:
+						throw new FtpException("Unsupported data type: " + type.ToString());
+				}
+
+				CurrentDataType = type;
 			}
-
-			CurrentDataType = type;
 		}
 
-#if !ASYNC
-		private delegate void AsyncSetDataType(FtpDataType type);
-
-		/// <summary>
-		/// Begins an asynchronous operation to set the data type of information sent over the data stream
-		/// </summary>
-		/// <param name="type">ASCII/Binary</param>
-		/// <param name="callback">Async callback</param>
-		/// <param name="state">State object</param>
-		/// <returns>IAsyncResult</returns>
-		protected IAsyncResult BeginSetDataType(FtpDataType type, AsyncCallback callback, object state) {
-			IAsyncResult ar;
-			AsyncSetDataType func;
-
-			lock (m_asyncmethods) {
-				ar = (func = new AsyncSetDataType(SetDataType)).BeginInvoke(type, callback, state);
-				m_asyncmethods.Add(ar, func);
-			}
-
-			return ar;
-		}
-
-		/// <summary>
-		/// Ends a call to <see cref="BeginSetDataType"/>
-		/// </summary>
-		/// <param name="ar">IAsyncResult returned from <see cref="BeginSetDataType"/></param>
-		protected void EndSetDataType(IAsyncResult ar) {
-			GetAsyncDelegate<AsyncSetDataType>(ar).EndInvoke(ar);
-		}
-
-#endif
 #if ASYNC
 		/// <summary>
 		/// Sets the data type of information sent over the data stream asynchronously
@@ -1825,13 +1694,8 @@ namespace FluentFTP {
 		/// <param name="type">ASCII/Binary</param>
 		/// <param name="token">The token that can be used to cancel the entire process</param>
 		protected async Task SetDataTypeAsync(FtpDataType type, CancellationToken token = default(CancellationToken)) {
-			// FIX : #291 only change the data type if different
-			if (CurrentDataType != type || ForceSetDataType) {
-				// FIX : #318 always set the type when we create a new connection
-				ForceSetDataType = false;
 
-				await SetDataTypeNoLockAsync(type, token);
-			}
+			await SetDataTypeNoLockAsync(type, token);
 		}
 
 		/// <summary>
@@ -1840,27 +1704,33 @@ namespace FluentFTP {
 		/// <param name="type">ASCII/Binary</param>
 		/// <param name="token">The token that can be used to cancel the entire process</param>
 		protected async Task SetDataTypeNoLockAsync(FtpDataType type, CancellationToken token = default(CancellationToken)) {
-			FtpReply reply;
-			switch (type) {
-				case FtpDataType.ASCII:
-					if (!(reply = await ExecuteAsync("TYPE A", token)).Success) {
-						throw new FtpCommandException(reply);
-					}
+			// FIX : #291 only change the data type if different
+			if (CurrentDataType != type || ForceSetDataType) {
+				// FIX : #318 always set the type when we create a new connection
+				ForceSetDataType = false;
 
-					break;
+				FtpReply reply;
+				switch (type) {
+					case FtpDataType.ASCII:
+						if (!(reply = await ExecuteAsync("TYPE A", token)).Success) {
+							throw new FtpCommandException(reply);
+						}
 
-				case FtpDataType.Binary:
-					if (!(reply = await ExecuteAsync("TYPE I", token)).Success) {
-						throw new FtpCommandException(reply);
-					}
+						break;
 
-					break;
+					case FtpDataType.Binary:
+						if (!(reply = await ExecuteAsync("TYPE I", token)).Success) {
+							throw new FtpCommandException(reply);
+						}
 
-				default:
-					throw new FtpException("Unsupported data type: " + type.ToString());
-			}
+						break;
+
+					default:
+						throw new FtpException("Unsupported data type: " + type.ToString());
+				}
 
 			CurrentDataType = type;
+			}
 		}
 #endif
 

@@ -1,5 +1,6 @@
 ﻿using System;
 using FluentFTP.Servers;
+using FluentFTP.Helpers;
 #if !CORE
 using System.Web;
 #endif
@@ -8,8 +9,8 @@ using System.Threading;
 #endif
 #if ASYNC
 using System.Threading.Tasks;
-
 #endif
+using System.Linq;
 
 namespace FluentFTP {
 	public partial class FtpClient : IFtpClient, IDisposable {
@@ -24,7 +25,6 @@ namespace FluentFTP {
 		/// </summary>
 		/// <param name="item">The symbolic link</param>
 		/// <returns>FtpListItem, null if the link can't be dereferenced</returns>
-		/// <example><code source="..\Examples\DereferenceLink.cs" lang="cs" /></example>
 		public FtpListItem DereferenceLink(FtpListItem item) {
 			return DereferenceLink(item, MaximumDereferenceCount);
 		}
@@ -35,7 +35,6 @@ namespace FluentFTP {
 		/// <param name="item">The symbolic link</param>
 		/// <param name="recMax">The maximum depth of recursion that can be performed before giving up.</param>
 		/// <returns>FtpListItem, null if the link can't be dereferenced</returns>
-		/// <example><code source="..\Examples\DereferenceLink.cs" lang="cs" /></example>
 		public FtpListItem DereferenceLink(FtpListItem item, int recMax) {
 			LogFunc(nameof(DereferenceLink), new object[] { item.FullName, recMax });
 
@@ -50,7 +49,6 @@ namespace FluentFTP {
 		/// <param name="recMax">Maximum recursive calls</param>
 		/// <param name="count">Counter</param>
 		/// <returns>FtpListItem, null if the link can't be dereferenced</returns>
-		/// <example><code source="..\Examples\DereferenceLink.cs" lang="cs" /></example>
 		private FtpListItem DereferenceLink(FtpListItem item, int recMax, ref int count) {
 			if (item.Type != FtpFileSystemObjectType.Link) {
 				throw new FtpException("You can only dereference a symbolic link. Please verify the item type is Link.");
@@ -60,7 +58,7 @@ namespace FluentFTP {
 				throw new FtpException("The link target was null. Please check this before trying to dereference the link.");
 			}
 
-			foreach (var obj in GetListing(item.LinkTarget.GetFtpDirectoryName(), FtpListOption.ForceList)) {
+			foreach (var obj in GetListing(item.LinkTarget.GetFtpDirectoryName())) {
 				if (item.LinkTarget == obj.FullName) {
 					if (obj.Type == FtpFileSystemObjectType.Link) {
 						if (++count == recMax) {
@@ -89,55 +87,6 @@ namespace FluentFTP {
 			return null;
 		}
 
-#if !ASYNC
-		private delegate FtpListItem AsyncDereferenceLink(FtpListItem item, int recMax);
-
-		/// <summary>
-		/// Begins an asynchronous operation to dereference a <see cref="FtpListItem"/> object
-		/// </summary>
-		/// <param name="item">The item to dereference</param>
-		/// <param name="recMax">Maximum recursive calls</param>
-		/// <param name="callback">AsyncCallback</param>
-		/// <param name="state">State Object</param>
-		/// <returns>IAsyncResult</returns>
-		/// <example><code source="..\Examples\BeginDereferenceLink.cs" lang="cs" /></example>
-		public IAsyncResult BeginDereferenceLink(FtpListItem item, int recMax, AsyncCallback callback, object state) {
-			IAsyncResult ar;
-			AsyncDereferenceLink func;
-
-			lock (m_asyncmethods) {
-				ar = (func = DereferenceLink).BeginInvoke(item, recMax, callback, state);
-				m_asyncmethods.Add(ar, func);
-			}
-
-			return ar;
-		}
-
-		/// <summary>
-		/// Begins an asynchronous operation to dereference a <see cref="FtpListItem"/> object. See the
-		/// <see cref="MaximumDereferenceCount"/> property for controlling
-		/// how deep this method will recurse before giving up.
-		/// </summary>
-		/// <param name="item">The item to dereference</param>
-		/// <param name="callback">AsyncCallback</param>
-		/// <param name="state">State Object</param>
-		/// <returns>IAsyncResult</returns>
-		/// <example><code source="..\Examples\BeginDereferenceLink.cs" lang="cs" /></example>
-		public IAsyncResult BeginDereferenceLink(FtpListItem item, AsyncCallback callback, object state) {
-			return BeginDereferenceLink(item, MaximumDereferenceCount, callback, state);
-		}
-
-		/// <summary>
-		/// Ends a call to <see cref="o:BeginDereferenceLink"/>
-		/// </summary>
-		/// <param name="ar">IAsyncResult</param>
-		/// <returns>A <see cref="FtpListItem"/>, or null if the link can't be dereferenced</returns>
-		/// <example><code source="..\Examples\BeginDereferenceLink.cs" lang="cs" /></example>
-		public FtpListItem EndDereferenceLink(IAsyncResult ar) {
-			return GetAsyncDelegate<AsyncDereferenceLink>(ar).EndInvoke(ar);
-		}
-
-#endif
 #if ASYNC
 		/// <summary>
 		/// Dereference a FtpListItem object
@@ -155,9 +104,7 @@ namespace FluentFTP {
 			if (item.LinkTarget == null) {
 				throw new FtpException("The link target was null. Please check this before trying to dereference the link.");
 			}
-
-			var listing = await GetListingAsync(item.LinkTarget.GetFtpDirectoryName(), FtpListOption.ForceList, token);
-
+			var listing = await GetListingAsync(item.LinkTarget.GetFtpDirectoryName(), token);
 			foreach (FtpListItem obj in listing) {
 				if (item.LinkTarget == obj.FullName) {
 					if (obj.Type == FtpFileSystemObjectType.Link) {
@@ -220,25 +167,31 @@ namespace FluentFTP {
 		/// Gets the size of a remote file, in bytes.
 		/// </summary>
 		/// <param name="path">The full or relative path of the file</param>
-		/// <returns>-1 if the command fails, otherwise the file size</returns>
-		/// <example><code source="..\Examples\GetFileSize.cs" lang="cs" /></example>
-		public virtual long GetFileSize(string path) {
+		/// <param name="defaultValue">Value to return if there was an error obtaining the file size, or if the file does not exist</param>
+		/// <returns>The size of the file, or defaultValue if there was a problem.</returns>
+		public virtual long GetFileSize(string path, long defaultValue = -1) {
 			// verify args
 			if (path.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "path");
 			}
 
+			path = path.GetFtpPath();
+
 			LogFunc(nameof(GetFileSize), new object[] { path });
 
+			if (ServerType == FtpServer.IBMzOSFTP && ServerOS == FtpOperatingSystem.IBMzOS)	{
+				return GetZOSFileSize(path);
+			}
+
 			if (!HasFeature(FtpCapability.SIZE)) {
-				return -1;
+				return defaultValue;
 			}
 
 			var sizeReply = new FtpSizeReply();
 #if !CORE14
 			lock (m_lock) {
 #endif
-				GetFileSizeInternal(path, sizeReply);
+				GetFileSizeInternal(path, sizeReply, defaultValue);
 #if !CORE14
 			}
 #endif
@@ -248,8 +201,10 @@ namespace FluentFTP {
 		/// <summary>
 		/// Gets the file size of an object, without locking
 		/// </summary>
-		private void GetFileSizeInternal(string path, FtpSizeReply sizeReply) {
-			long length = -1;
+		private void GetFileSizeInternal(string path, FtpSizeReply sizeReply, long defaultValue) {
+			long length = defaultValue;
+
+			path = path.GetFtpPath();
 
 			// Fix #137: Switch to binary mode since some servers don't support SIZE command for ASCII files.
 			if (_FileSizeASCIINotSupported) {
@@ -257,10 +212,10 @@ namespace FluentFTP {
 			}
 
 			// execute the SIZE command
-			var reply = Execute("SIZE " + path.GetFtpPath());
+			var reply = Execute("SIZE " + path);
 			sizeReply.Reply = reply;
 			if (!reply.Success) {
-				length = -1;
+				length = defaultValue;
 
 				// Fix #137: FTP server returns 'SIZE not allowed in ASCII mode'
 				if (!_FileSizeASCIINotSupported && reply.Message.IsKnownError(FtpServerStrings.fileSizeNotInASCII)) {
@@ -268,72 +223,45 @@ namespace FluentFTP {
 					_FileSizeASCIINotSupported = true;
 
 					// retry getting the file size
-					GetFileSizeInternal(path, sizeReply);
+					GetFileSizeInternal(path, sizeReply, defaultValue);
 					return;
 				}
 			}
 			else if (!long.TryParse(reply.Message, out length)) {
-				length = -1;
+				length = defaultValue;
 			}
 
 			sizeReply.FileSize = length;
 		}
 
-#if !ASYNC
-		private delegate long AsyncGetFileSize(string path);
-
-		/// <summary>
-		/// Begins an asynchronous operation to retrieve the size of a remote file
-		/// </summary>
-		/// <param name="path">The full or relative path of the file</param>
-		/// <param name="callback">Async callback</param>
-		/// <param name="state">State object</param>
-		/// <returns>IAsyncResult</returns>
-		/// <example><code source="..\Examples\BeginGetFileSize.cs" lang="cs" /></example>
-		public IAsyncResult BeginGetFileSize(string path, AsyncCallback callback, object state) {
-			IAsyncResult ar;
-			AsyncGetFileSize func;
-
-			lock (m_asyncmethods) {
-				ar = (func = GetFileSize).BeginInvoke(path, callback, state);
-				m_asyncmethods.Add(ar, func);
-			}
-
-			return ar;
-		}
-
-		/// <summary>
-		/// Ends a call to <see cref="BeginGetFileSize"/>
-		/// </summary>
-		/// <param name="ar">IAsyncResult returned from <see cref="BeginGetFileSize"/></param>
-		/// <returns>The size of the file, -1 if there was a problem.</returns>
-		/// <example><code source="..\Examples\BeginGetFileSize.cs" lang="cs" /></example>
-		public long EndGetFileSize(IAsyncResult ar) {
-			return GetAsyncDelegate<AsyncGetFileSize>(ar).EndInvoke(ar);
-		}
-
-#endif
 #if ASYNC
 		/// <summary>
 		/// Asynchronously gets the size of a remote file, in bytes.
 		/// </summary>
 		/// <param name="path">The full or relative path of the file</param>
+		/// <param name="defaultValue">Value to return if there was an error obtaining the file size, or if the file does not exist</param>
 		/// <param name="token">The token that can be used to cancel the entire process</param>
-		/// <returns>The size of the file, -1 if there was a problem.</returns>
-		public async Task<long> GetFileSizeAsync(string path, CancellationToken token = default(CancellationToken)) {
+		/// <returns>The size of the file, or defaultValue if there was a problem.</returns>
+		public async Task<long> GetFileSizeAsync(string path, long defaultValue = -1, CancellationToken token = default(CancellationToken)) {
 			// verify args
 			if (path.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "path");
 			}
 
-			LogFunc(nameof(GetFileSizeAsync), new object[] { path });
+			path = path.GetFtpPath();
+
+			LogFunc(nameof(GetFileSizeAsync), new object[] { path, defaultValue });
+
+			if (ServerType == FtpServer.IBMzOSFTP && ServerOS == FtpOperatingSystem.IBMzOS)	{
+				return await GetZOSFileSizeAsync(path, token);
+			}
 
 			if (!HasFeature(FtpCapability.SIZE)) {
-				return -1;
+				return defaultValue;
 			}
 
 			FtpSizeReply sizeReply = new FtpSizeReply();
-			await GetFileSizeInternalAsync(path, token, sizeReply);
+			await GetFileSizeInternalAsync(path, defaultValue, token, sizeReply);
 
 			return sizeReply.FileSize;
 		}
@@ -341,8 +269,10 @@ namespace FluentFTP {
 		/// <summary>
 		/// Gets the file size of an object, without locking
 		/// </summary>
-		private async Task GetFileSizeInternalAsync(string path, CancellationToken token, FtpSizeReply sizeReply) {
-			long length = -1;
+		private async Task GetFileSizeInternalAsync(string path, long defaultValue, CancellationToken token, FtpSizeReply sizeReply) {
+			long length = defaultValue;
+			
+			path = path.GetFtpPath();
 
 			// Fix #137: Switch to binary mode since some servers don't support SIZE command for ASCII files.
 			if (_FileSizeASCIINotSupported) {
@@ -350,10 +280,10 @@ namespace FluentFTP {
 			}
 
 			// execute the SIZE command
-			var reply = await ExecuteAsync("SIZE " + path.GetFtpPath(), token);
+			var reply = await ExecuteAsync("SIZE " + path, token);
 			sizeReply.Reply = reply;
 			if (!reply.Success) {
-				sizeReply.FileSize = -1;
+				sizeReply.FileSize = defaultValue;
 
 				// Fix #137: FTP server returns 'SIZE not allowed in ASCII mode'
 				if (!_FileSizeASCIINotSupported && reply.Message.IsKnownError(FtpServerStrings.fileSizeNotInASCII)) {
@@ -361,12 +291,12 @@ namespace FluentFTP {
 					_FileSizeASCIINotSupported = true;
 
 					// retry getting the file size
-					await GetFileSizeInternalAsync(path, token, sizeReply);
+					await GetFileSizeInternalAsync(path, defaultValue, token, sizeReply);
 					return;
 				}
 			}
 			else if (!long.TryParse(reply.Message, out length)) {
-				length = -1;
+				length = defaultValue;
 			}
 
 			sizeReply.FileSize = length;
@@ -376,7 +306,6 @@ namespace FluentFTP {
 
 
 #endif
-
 		#endregion
 
 		#region Get Modified Time
@@ -386,12 +315,13 @@ namespace FluentFTP {
 		/// </summary>
 		/// <param name="path">The full path to the file</param>
 		/// <returns>The modified time, or <see cref="DateTime.MinValue"/> if there was a problem</returns>
-		/// <example><code source="..\Examples\GetModifiedTime.cs" lang="cs" /></example>
 		public virtual DateTime GetModifiedTime(string path) {
 			// verify args
 			if (path.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "path");
 			}
+
+			path = path.GetFtpPath();
 
 			LogFunc(nameof(GetModifiedTime), new object[] { path });
 
@@ -403,7 +333,7 @@ namespace FluentFTP {
 #endif
 
 				// get modified date of a file
-				if ((reply = Execute("MDTM " + path.GetFtpPath())).Success) {
+				if ((reply = Execute("MDTM " + path)).Success) {
 					date = reply.Message.ParseFtpDate(this);
 					date = ConvertDate(date);
 				}
@@ -415,40 +345,6 @@ namespace FluentFTP {
 			return date;
 		}
 
-#if !ASYNC
-		private delegate DateTime AsyncGetModifiedTime(string path);
-
-		/// <summary>
-		/// Begins an asynchronous operation to get the modified time of a remote file
-		/// </summary>
-		/// <param name="path">The full path to the file</param>
-		/// <param name="callback">Async callback</param>
-		/// <param name="state">State object</param>
-		/// <returns>IAsyncResult</returns>
-		/// <example><code source="..\Examples\BeginGetModifiedTime.cs" lang="cs" /></example>
-		public IAsyncResult BeginGetModifiedTime(string path, AsyncCallback callback, object state) {
-			IAsyncResult ar;
-			AsyncGetModifiedTime func;
-
-			lock (m_asyncmethods) {
-				ar = (func = GetModifiedTime).BeginInvoke(path, callback, state);
-				m_asyncmethods.Add(ar, func);
-			}
-
-			return ar;
-		}
-
-		/// <summary>
-		/// Ends a call to <see cref="BeginGetModifiedTime"/>
-		/// </summary>
-		/// <param name="ar">IAsyncResult returned from <see cref="BeginGetModifiedTime"/></param>
-		/// <returns>The modified time, or <see cref="DateTime.MinValue"/> if there was a problem</returns>
-		/// <example><code source="..\Examples\BeginGetModifiedTime.cs" lang="cs" /></example>
-		public DateTime EndGetModifiedTime(IAsyncResult ar) {
-			return GetAsyncDelegate<AsyncGetModifiedTime>(ar).EndInvoke(ar);
-		}
-
-#endif
 #if ASYNC
 		/// <summary>
 		/// Gets the modified time of a remote file asynchronously
@@ -462,13 +358,15 @@ namespace FluentFTP {
 				throw new ArgumentException("Required parameter is null or blank.", "path");
 			}
 
+			path = path.GetFtpPath();
+
 			LogFunc(nameof(GetModifiedTimeAsync), new object[] { path });
 
 			var date = DateTime.MinValue;
 			FtpReply reply;
 
 			// get modified date of a file
-			if ((reply = await ExecuteAsync("MDTM " + path.GetFtpPath(), token)).Success) {
+			if ((reply = await ExecuteAsync("MDTM " + path, token)).Success) {
 				date = reply.Message.ParseFtpDate(this);
 				date = ConvertDate(date);
 			}
@@ -496,6 +394,8 @@ namespace FluentFTP {
 				throw new ArgumentException("Required parameter is null or blank.", "date");
 			}
 
+			path = path.GetFtpPath();
+
 			LogFunc(nameof(SetModifiedTime), new object[] { path, date });
 
 			FtpReply reply;
@@ -509,7 +409,7 @@ namespace FluentFTP {
 				var timeStr = date.GenerateFtpDate();
 
 				// set modified date of a file
-				if ((reply = Execute("MFMT " + timeStr + " " + path.GetFtpPath())).Success) {
+				if ((reply = Execute("MFMT " + timeStr + " " + path)).Success) {
 				}
 
 #if !CORE14
@@ -518,38 +418,6 @@ namespace FluentFTP {
 #endif
 		}
 
-#if !ASYNC
-		private delegate void AsyncSetModifiedTime(string path, DateTime date);
-
-		/// <summary>
-		/// Begins an asynchronous operation to get the modified time of a remote file
-		/// </summary>
-		/// <param name="path">The full path to the file</param>
-		/// <param name="date">The new modified date/time value</param>
-		/// <param name="state">State object</param>
-		/// <returns>IAsyncResult</returns>
-		public IAsyncResult BeginSetModifiedTime(string path, DateTime date, AsyncCallback callback, object state) {
-			IAsyncResult ar;
-			AsyncSetModifiedTime func;
-
-			lock (m_asyncmethods) {
-				ar = (func = SetModifiedTime).BeginInvoke(path, date, callback, state);
-				m_asyncmethods.Add(ar, func);
-			}
-
-			return ar;
-		}
-
-		/// <summary>
-		/// Ends a call to <see cref="BeginSetModifiedTime"/>
-		/// </summary>
-		/// <param name="ar">IAsyncResult returned from <see cref="BeginSetModifiedTime"/></param>
-		/// <returns>The modified time, or <see cref="DateTime.MinValue"/> if there was a problem</returns>
-		public void EndSetModifiedTime(IAsyncResult ar) {
-			GetAsyncDelegate<AsyncSetModifiedTime>(ar).EndInvoke(ar);
-		}
-
-#endif
 #if ASYNC
 		/// <summary>
 		/// Gets the modified time of a remote file asynchronously
@@ -567,6 +435,8 @@ namespace FluentFTP {
 				throw new ArgumentException("Required parameter is null or blank.", "date");
 			}
 
+			path = path.GetFtpPath();
+
 			LogFunc(nameof(SetModifiedTimeAsync), new object[] { path, date });
 
 			FtpReply reply;
@@ -576,7 +446,7 @@ namespace FluentFTP {
 			var timeStr = date.GenerateFtpDate();
 
 			// set modified date of a file
-			if ((reply = await ExecuteAsync("MFMT " + timeStr + " " + path.GetFtpPath(), token)).Success) {
+			if ((reply = await ExecuteAsync("MFMT " + timeStr + " " + path, token)).Success) {
 			}
 		}
 #endif

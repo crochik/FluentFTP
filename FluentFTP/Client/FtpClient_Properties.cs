@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Security.Authentication;
 using System.Net;
 using FluentFTP.Servers;
+using FluentFTP.Helpers;
 
 namespace FluentFTP {
 	public partial class FtpClient : IDisposable {
@@ -37,6 +38,26 @@ namespace FluentFTP {
 		private bool _AutoDispose = false;
 
 		/// <summary>
+		/// Cached value of the last read working directory (absolute path).
+		/// </summary>
+		private string _LastWorkingDir = null;
+
+		/// <summary>
+		/// Cached value of the last set hash algorithm.
+		/// </summary>
+		private FtpHashAlgorithm _LastHashAlgo = FtpHashAlgorithm.NONE;
+
+		/// <summary>
+		/// Did the FTPS connection fail during the last Connect/ConnectAsync attempt?
+		/// </summary>
+		private bool _ConnectionFTPSFailure = false;
+
+		/// <summary>
+		/// Did the UTF8 encoding setting work during the last Connect/ConnectAsync attempt?
+		/// </summary>
+		private bool _ConnectionUTF8Success = false;
+
+		/// <summary>
 		/// These flags must be reset every time we connect, to allow for users to connect to
 		/// different FTP servers with the same client object.
 		/// </summary>
@@ -44,6 +65,10 @@ namespace FluentFTP {
 			_EPSVNotSupported = false;
 			_FileSizeASCIINotSupported = false;
 			_RecursiveListSupported = false;
+			_LastWorkingDir = null;
+			_LastHashAlgo = FtpHashAlgorithm.NONE;
+			_ConnectionFTPSFailure = false;
+			_ConnectionUTF8Success = false;
 		}
 
 		/// <summary>
@@ -157,12 +182,29 @@ namespace FluentFTP {
 		}
 
 		/// <summary>
-		/// Gets a value indicating if the connection is alive
+		/// Returns true if the connection to the FTP server is open.
+		/// WARNING: Returns true even if our credentials are incorrect but connection to the server is open.
+		/// See the IsAuthenticated property if you want to check if we are correctly logged in.
 		/// </summary>
 		public bool IsConnected {
 			get {
 				if (m_stream != null) {
 					return m_stream.IsConnected;
+				}
+
+				return false;
+			}
+		}
+
+		private bool m_IsAuthenticated = false;
+
+		/// <summary>
+		/// Returns true if if the connection to the FTP server is open and if the FTP server accepted our credentials.
+		/// </summary>
+		public bool IsAuthenticated {
+			get {
+				if (m_stream != null) {
+					return m_stream.IsConnected && m_IsAuthenticated;
 				}
 
 				return false;
@@ -284,13 +326,11 @@ namespace FluentFTP {
 				// automatically determine port
 				// when m_port is 0.
 				if (m_port == 0) {
-					switch (EncryptionMode) {
-						case FtpEncryptionMode.None:
-						case FtpEncryptionMode.Explicit:
-							return 21;
-
-						case FtpEncryptionMode.Implicit:
-							return 990;
+					if (EncryptionMode == FtpEncryptionMode.Implicit) {
+						return 990;
+					}
+					else {
+						return 21;
 					}
 				}
 
@@ -354,11 +394,34 @@ namespace FluentFTP {
 		private IEnumerable<int> m_ActivePorts;
 
 		/// <summary>
-		/// Ports used for Active Data Connection
+		/// Ports used for Active Data Connection.
+		/// Useful when your FTP server has certain ports that are blocked or used for other purposes.
 		/// </summary>
 		public IEnumerable<int> ActivePorts {
 			get => m_ActivePorts;
 			set => m_ActivePorts = value;
+		}
+
+		private IEnumerable<int> m_PassiveBlockedPorts;
+
+		/// <summary>
+		/// Ports blocked for Passive Data Connection (PASV and EPSV).
+		/// Useful when your FTP server has certain ports that are blocked or used for other purposes.
+		/// </summary>
+		public IEnumerable<int> PassiveBlockedPorts {
+			get => m_PassiveBlockedPorts;
+			set => m_PassiveBlockedPorts = value;
+		}
+		
+		private int m_PassiveMaxAttempts = 100;
+
+		/// <summary>
+		/// Maximum number of passive connections made in order to find a working port for Passive Data Connection (PASV and EPSV).
+		/// Only used if PassiveBlockedPorts is non-null.
+		/// </summary>
+		public int PassiveMaxAttempts {
+			get => m_PassiveMaxAttempts;
+			set => m_PassiveMaxAttempts = value;
 		}
 
 		private FtpDataConnectionType m_dataConnectionType = FtpDataConnectionType.AutoPassive;
@@ -453,15 +516,23 @@ namespace FluentFTP {
 			}
 		}
 
-		private List<FtpCapability> m_capabilities = new List<FtpCapability>();
+		private List<FtpCapability> m_capabilities = null;
 
 		/// <summary>
 		/// Gets the server capabilities represented by an array of capability flags
 		/// </summary>
 		public List<FtpCapability> Capabilities {
 			get {
-				if (m_stream == null || !m_stream.IsConnected) {
-					Connect();
+
+				// FIX #683: if capabilities are already loaded, dont check if connected and return straightaway
+				if (m_capabilities != null && m_capabilities.Count > 0) {
+					return m_capabilities;
+				}
+
+				// FIX #683: while using async operations, it is possile that the stream is not
+				// connected, so don't connect using sychronous connection logic
+				if (m_stream == null) {
+					throw new FtpException("Please call Connect() before trying to read the Capabilities!");
 				}
 
 				return m_capabilities;
@@ -472,16 +543,24 @@ namespace FluentFTP {
 		private FtpHashAlgorithm m_hashAlgorithms = FtpHashAlgorithm.NONE;
 
 		/// <summary>
-		/// Get the hash types supported by the server, if any. This
-		/// is a recent extension to the protocol that is not fully
+		/// Get the hash types supported by the server for use with the HASH Command.
+		/// This is a recent extension to the protocol that is not fully
 		/// standardized and is not guaranteed to work. See here for
 		/// more details:
 		/// http://tools.ietf.org/html/draft-bryan-ftpext-hash-02
 		/// </summary>
 		public FtpHashAlgorithm HashAlgorithms {
 			get {
+
+				// FIX #683: if hash types are already loaded, dont check if connected and return straightaway
+				if (m_hashAlgorithms != FtpHashAlgorithm.NONE) {
+					return m_hashAlgorithms;
+				}
+
+				// FIX #683: while using async operations, it is possile that the stream is not
+				// connected, so don't connect using sychronous connection logic
 				if (m_stream == null || !m_stream.IsConnected) {
-					Connect();
+					throw new FtpException("Please call Connect() before trying to read the HashAlgorithms!");
 				}
 
 				return m_hashAlgorithms;
@@ -540,7 +619,8 @@ namespace FluentFTP {
 		private FtpsBuffering m_SslBuffering = FtpsBuffering.Auto;
 
 		/// <summary>
-		/// Whether to use SSL Buffering to speed up data transfer during FTP operations
+		/// Whether to use SSL Buffering to speed up data transfer during FTP operations.
+		/// SSL Buffering is always disabled on .NET 5.0 due to platform issues (see issue 682 in FluentFTP issue tracker).
 		/// </summary>
 		public FtpsBuffering SslBuffering {
 			get => m_SslBuffering;
@@ -563,7 +643,6 @@ namespace FluentFTP {
 		/// the connection will be aborted.
 		/// Not fired if ValidateAnyCertificate is set to true.
 		/// </summary>
-		/// <example><code source="..\Examples\ValidateCertificate.cs" lang="cs" /></example>
 		public event FtpSslValidation ValidateCertificate {
 			add => m_ValidateCertificate += value;
 			remove => m_ValidateCertificate -= value;
@@ -581,12 +660,13 @@ namespace FluentFTP {
 			set => m_ValidateAnyCertificate = value;
 		}
 
-		private bool m_ValidateCertificateRevocation = true;
+		private bool m_ValidateCertificateRevocation = false;
 
 		/// <summary>
 		/// Indicates if the certificate revocation list is checked during authentication.
 		/// Useful when you need to maintain the certificate chain validation,
 		/// but skip the certificate revocation check.
+		/// WARNING: Enabling this can cause memory leaks in some conditions (see issue #710 for details).
 		/// </summary>
 		public bool ValidateCertificateRevocation {
 			get => m_ValidateCertificateRevocation;
@@ -657,7 +737,8 @@ namespace FluentFTP {
 
 		/// <summary>
 		/// File listing parser to be used. 
-		/// Automatically calculated based on the type of the server, unless changed.
+		/// Automatically calculated based on the type of the server at the time of connection.
+		/// If you want to override this property, make sure to do it after calling Connect.
 		/// </summary>
 		public FtpParser ListingParser {
 			get => m_parser;
@@ -689,11 +770,13 @@ namespace FluentFTP {
 			get => m_customParser;
 			set {
 				m_customParser = value;
+
+				// modify the ListingParser to note that a custom parser is set
 				if (value != null) {
-					m_parser = FtpParser.Custom;
+					ListingParser = FtpParser.Custom;
 				}
 				else {
-					m_parser = FtpParser.Auto;
+					ListingParser = FtpParser.Auto;
 				}
 			}
 		}
@@ -997,8 +1080,60 @@ namespace FluentFTP {
 		/// If this is null, then the Host parameter of the FTP client is sent.
 		/// </summary>
 		public string SendHostDomain {
-			get => m_SendHostDomain;
+			get => m_SendHostDomain; 
 			set => m_SendHostDomain = value;
+		}
+
+#if ASYNC && !CORE14 && !CORE16
+		private IPAddress m_SocketLocalIp;
+		/// <summary>
+		/// The local socket will be bound to the given local IP/interface.
+		/// This is useful if you have several usable public IP addresses and want to use a particular one.
+		/// </summary>
+		public IPAddress SocketLocalIp
+		{
+			get => m_SocketLocalIp;
+			set => m_SocketLocalIp = value;
+		}
+#endif
+
+		/// <summary>
+		/// Returns the local end point of the FTP socket, if it is available.
+		/// </summary>
+		public IPEndPoint SocketLocalEndPoint {
+			get => m_stream?.LocalEndPoint;
+		}
+
+		/// <summary>
+		/// Returns the remote end point of the FTP socket, if it is available.
+		/// </summary>
+		public IPEndPoint SocketRemoteEndPoint {
+			get => m_stream?.RemoteEndPoint;
+		}
+
+		private FtpZOSListRealm m_zOSListingRealm;
+
+		/// <summary>
+		/// During and after a z/OS GetListing(), this value shows the
+		/// z/OS filesystem realm that was encountered.
+		/// </summary>
+		public FtpZOSListRealm zOSListingRealm
+		{
+			get => m_zOSListingRealm;
+			set => m_zOSListingRealm = value;
+		}
+
+		private ushort m_zOSListingLRECL;
+
+		/// <summary>
+		/// During and after a z/OS GetListing(), this value shows the
+		/// the LRECL that was encountered (for a realm = Member only).
+		/// The value is used internally to calculate member sizes
+		/// </summary>
+		public ushort zOSListingLRECL
+		{
+			get => m_zOSListingLRECL;
+			set => m_zOSListingLRECL = value;
 		}
 
 		// ADD PROPERTIES THAT NEED TO BE CLONED INTO

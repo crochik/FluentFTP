@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 #endif
+using FluentFTP.Helpers;
 
 namespace FluentFTP {
 	public partial class FtpClient : IFtpClient, IDisposable {
@@ -35,9 +36,11 @@ namespace FluentFTP {
 #if !CORE14
 			lock (m_lock) {
 #endif
+				path = path.GetFtpPath();
+
 				LogFunc(nameof(SetFilePermissions), new object[] { path, permissions });
 
-				if (!(reply = Execute("SITE CHMOD " + permissions.ToString() + " " + path.GetFtpPath())).Success) {
+				if (!(reply = Execute("SITE CHMOD " + permissions.ToString() + " " + path)).Success) {
 					throw new FtpCommandException(reply);
 				}
 
@@ -66,9 +69,11 @@ namespace FluentFTP {
 				throw new ArgumentException("Required parameter is null or blank.", "path");
 			}
 
+			path = path.GetFtpPath();
+
 			LogFunc(nameof(SetFilePermissionsAsync), new object[] { path, permissions });
 
-			if (!(reply = await ExecuteAsync("SITE CHMOD " + permissions.ToString() + " " + path.GetFtpPath(), token)).Success) {
+			if (!(reply = await ExecuteAsync("SITE CHMOD " + permissions.ToString() + " " + path, token)).Success) {
 				throw new FtpCommandException(reply);
 			}
 		}
@@ -115,7 +120,7 @@ namespace FluentFTP {
 		/// <param name="group">The group permissions</param>
 		/// <param name="other">The other permissions</param>
 		public void SetFilePermissions(string path, FtpPermission owner, FtpPermission group, FtpPermission other) {
-			SetFilePermissions(path, FtpExtensions.CalcChmod(owner, group, other));
+			SetFilePermissions(path, Permissions.CalcChmod(owner, group, other));
 		}
 
 #if ASYNC
@@ -132,7 +137,7 @@ namespace FluentFTP {
 		/// <param name="other">The other permissions</param>
 		/// <param name="token">The token that can be used to cancel the entire process</param>
 		public Task SetFilePermissionsAsync(string path, FtpPermission owner, FtpPermission group, FtpPermission other, CancellationToken token = default(CancellationToken)) {
-			return SetFilePermissionsAsync(path, FtpExtensions.CalcChmod(owner, group, other), token);
+			return SetFilePermissionsAsync(path, Permissions.CalcChmod(owner, group, other), token);
 		}
 #endif
 
@@ -182,6 +187,8 @@ namespace FluentFTP {
 				throw new ArgumentException("Required parameter is null or blank.", "path");
 			}
 
+			path = path.GetFtpPath();
+
 			LogFunc(nameof(GetFilePermissions), new object[] { path });
 
 			var result = GetObjectInfo(path);
@@ -203,6 +210,8 @@ namespace FluentFTP {
 			if (path.IsBlank()) {
 				throw new ArgumentException("Required parameter is null or blank.", "path");
 			}
+
+			path = path.GetFtpPath();
 
 			LogFunc(nameof(GetFilePermissionsAsync), new object[] { path });
 

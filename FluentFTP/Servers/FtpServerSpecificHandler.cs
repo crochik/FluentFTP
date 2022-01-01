@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using System.Collections.Generic;
 using System.Security.Authentication;
 using FluentFTP.Servers.Handlers;
+using FluentFTP.Helpers;
 #if (CORE || NETFX)
 using System.Threading;
 #endif
@@ -47,6 +48,9 @@ namespace FluentFTP.Servers {
 			new WindowsIisServer(),
 			new WuFtpdServer(),
 			new XLightServer(),
+			new FritzBoxServer(),
+			new WSFTPServer(),
+			new PyFtpdLibServer(),
 		};
 
 		#region Working Connection Profiles
@@ -131,6 +135,13 @@ namespace FluentFTP.Servers {
 				// Windows OS
 				serverOS = FtpOperatingSystem.Windows;
 			}
+			else if (system.Contains("Z/OS"))
+			{
+				// IBM z/OS
+				// Syst message: "215 MVS is the operating system of this server. FTP Server is running on z/OS."
+				// Syst message: "215 UNIX is the operating system of this server. FTP Server is running on z/OS."
+				serverOS = FtpOperatingSystem.IBMzOS;
+			}
 			else if (system.Contains("UNIX") || system.Contains("AIX")) {
 				// Unix OS
 				serverOS = FtpOperatingSystem.Unix;
@@ -142,11 +153,6 @@ namespace FluentFTP.Servers {
 			else if (system.Contains("OS/400")) {
 				// IBM OS/400
 				serverOS = FtpOperatingSystem.IBMOS400;
-			}
-			else if (system.Contains("Z/OS")) {
-				// IBM OS/400
-				// Syst message: "215 MVS is the operating system of this server. FTP Server is running on z/OS."
-				serverOS = FtpOperatingSystem.IBMzOS;
 			}
 			else if (system.Contains("SUNOS")) {
 				// SUN OS

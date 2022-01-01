@@ -1,10 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netcoreapp3.1;net20;net35;net40;net45;netstandard1.4;netstandard1.6;netstandard2.0;netstandard2.1</TargetFrameworks>
+    <TargetFrameworks>net20;net35;net40;net45;net50;netstandard1.4;netstandard1.6;netstandard2.0;netstandard2.1</TargetFrameworks>
+    <TargetFramework>net50</TargetFramework>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(TargetFramework)'=='net20' Or '$(TargetFramework)'=='net35' Or '$(TargetFramework)'=='net40' Or '$(TargetFramework)'=='net45'">
+  <PropertyGroup Condition="'$(TargetFramework)'=='net20' Or '$(TargetFramework)'=='net35' Or '$(TargetFramework)'=='net40' Or '$(TargetFramework)'=='net45' Or '$(TargetFramework)'=='net50'">
     <DefineConstants>$(DefineConstants);NETFX</DefineConstants>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
@@ -21,17 +22,34 @@
     <DefineConstants>$(DefineConstants);CORE2PLUS</DefineConstants>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(TargetFramework)'=='netstandard1.4'">
-    <DefineConstants>$(DefineConstants);CORE14;NO_SSL</DefineConstants>
-  </PropertyGroup>
+	<PropertyGroup Condition="'$(TargetFramework)'=='netstandard1.4'">
+		<DefineConstants>$(DefineConstants);CORE14;NO_SSL</DefineConstants>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(TargetFramework)'=='netstandard1.6'">
+		<DefineConstants>$(DefineConstants);CORE16</DefineConstants>
+	</PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)'=='net45' Or '$(TargetFramework)'=='net50' Or $(DefineConstants.Contains('CORE'))">
     <DefineConstants>$(DefineConstants);ASYNC</DefineConstants>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)'=='net45' Or '$(TargetFramework)'=='net50'">
-    <DefineConstants>$(DefineConstants);NET45PLUS</DefineConstants>
+    <DefineConstants>$(DefineConstants);NET45</DefineConstants>
   </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)'=='net50'">
+    <DefineConstants>$(DefineConstants);NET50;CORE</DefineConstants>
+  </PropertyGroup>
+
+  <!--
+  Required only for GetListingAsyncEnumerable
+  
+  <PropertyGroup Condition="'$(TargetFramework)'=='netstandard2.0' Or '$(TargetFramework)'=='netstandard2.1' Or '$(TargetFramework)'=='net50'">
+    <DefineConstants>$(DefineConstants);ASYNCPLUS</DefineConstants>
+    <LangVersion>8.0</LangVersion>
+  </PropertyGroup>
+  -->
 
   <PropertyGroup>
     <PackageId>FluentFTP</PackageId>
@@ -44,7 +62,7 @@
     <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\FluentFTP.xml</DocumentationFile>
     <SignAssembly>True</SignAssembly>
     <AssemblyOriginatorKeyFile>sn.snk</AssemblyOriginatorKeyFile>
-    <Version>33.0.3</Version>
+    <Version>35.2.3</Version>
     <PackageLicenseFile>LICENSE.TXT</PackageLicenseFile>
     <PackageIcon>logo-nuget.png</PackageIcon>
   </PropertyGroup>
@@ -71,6 +89,18 @@
     <PackageReference Include="System.Threading.Thread" Version="4.3.0.0" />
   </ItemGroup> -->
 
+  <!--
+  Required only for GetListingAsyncEnumerable
+  
+  <ItemGroup Condition="$(DefineConstants.Contains('ASYNCPLUS')) And '$(TargetFramework)'=='netstandard2.0'">
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="5.0.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="$(DefineConstants.Contains('ASYNCPLUS'))">
+    <PackageReference Include="System.Linq.Async" Version="5.0.0" />
+  </ItemGroup>
+  -->
+
   <ItemGroup>
     <None Include="..\.github\logo-nuget.png">
       <Pack>True</Pack>
@@ -80,6 +110,30 @@
       <Pack>True</Pack>
       <PackagePath></PackagePath>
     </None>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net45'">
+    <PackageReference Include="System.Net.Primitives" Version="4.3.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net50'">
+    <PackageReference Include="System.Net.Primitives" Version="4.3.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard1.4'">
+    <PackageReference Include="System.Net.Primitives" Version="4.3.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard1.6'">
+    <PackageReference Include="System.Net.Primitives" Version="4.3.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <PackageReference Include="System.Net.Primitives" Version="4.3.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
+    <PackageReference Include="System.Net.Primitives" Version="4.3.0" />
   </ItemGroup>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="'$(Configuration)'=='Release' And '$(TargetFramework)'=='net45'">

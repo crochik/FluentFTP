@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using FluentFTP.Rules;
+using FluentFTP.Helpers;
 #if (CORE || NETFX)
 using System.Threading;
 #endif
@@ -51,13 +52,13 @@ namespace FluentFTP {
 				throw new ArgumentException("Required parameter is null or blank.", "remoteFolder");
 			}
 
-			LogFunc(nameof(TransferDirectory), new object[] { sourceFolder, remoteClient, remoteFolder, mode, existsMode, verifyOptions, (rules.IsBlank() ? null : rules.Count + " rules") });
-
-			var results = new List<FtpResult>();
-
 			// cleanup the FTP paths
 			sourceFolder = sourceFolder.GetFtpPath().EnsurePostfix("/");
 			remoteFolder = remoteFolder.GetFtpPath().EnsurePostfix("/");
+
+			LogFunc(nameof(TransferDirectory), new object[] { sourceFolder, remoteClient, remoteFolder, mode, existsMode, verifyOptions, (rules.IsBlank() ? null : rules.Count + " rules") });
+
+			var results = new List<FtpResult>();
 
 			// if the source dir does not exist, fail fast
 			if (!DirectoryExists(sourceFolder)) {
@@ -140,13 +141,13 @@ namespace FluentFTP {
 				throw new ArgumentException("Required parameter is null or blank.", "remoteFolder");
 			}
 
-			LogFunc(nameof(TransferDirectoryAsync), new object[] { sourceFolder, remoteClient, remoteFolder, mode, existsMode, verifyOptions, (rules.IsBlank() ? null : rules.Count + " rules") });
-
-			var results = new List<FtpResult>();
-
 			// cleanup the FTP paths
 			sourceFolder = sourceFolder.GetFtpPath().EnsurePostfix("/");
 			remoteFolder = remoteFolder.GetFtpPath().EnsurePostfix("/");
+
+			LogFunc(nameof(TransferDirectoryAsync), new object[] { sourceFolder, remoteClient, remoteFolder, mode, existsMode, verifyOptions, (rules.IsBlank() ? null : rules.Count + " rules") });
+
+			var results = new List<FtpResult>();
 
 			// if the source dir does not exist, fail fast
 			if (!await DirectoryExistsAsync(sourceFolder, token)) {
@@ -195,7 +196,7 @@ namespace FluentFTP {
 
 			// get all the files in the local directory
 			var fileListing = (await GetListingAsync(sourceFolder, FtpListOption.Recursive, token)).Where(x => x.Type == FtpFileSystemObjectType.File).Select(x => x.FullName).ToArray();
-
+			
 			// loop thru each file and transfer it
 			var filesToUpload = GetFilesToTransfer(sourceFolder, remoteFolder, rules, results, shouldExist, fileListing);
 			await TransferServerFilesAsync(filesToUpload, remoteClient, existsMode, verifyOptions, progress, remoteListing, token);

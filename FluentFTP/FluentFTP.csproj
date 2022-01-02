@@ -1,55 +1,13 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net20;net35;net40;net45;net50;netstandard1.4;netstandard1.6;netstandard2.0;netstandard2.1</TargetFrameworks>
+    <TargetFrameworks>net50</TargetFrameworks>
     <TargetFramework>net50</TargetFramework>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(TargetFramework)'=='net20' Or '$(TargetFramework)'=='net35' Or '$(TargetFramework)'=='net40' Or '$(TargetFramework)'=='net45' Or '$(TargetFramework)'=='net50'">
-    <DefineConstants>$(DefineConstants);NETFX</DefineConstants>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(TargetFramework)'=='net20'">
-    <DefineConstants>$(DefineConstants);LINQBRIDGE_LIB</DefineConstants>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(TargetFramework)'=='netstandard1.6' Or '$(TargetFramework)'=='netstandard1.4' Or '$(TargetFramework)'=='netstandard2.0' Or '$(TargetFramework)'=='netstandard2.1' Or '$(TargetFramework)'=='netcoreapp3.1'">
-    <DefineConstants>$(DefineConstants);CORE</DefineConstants>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(TargetFramework)'=='netstandard2.0' Or '$(TargetFramework)'=='netstandard2.1' Or '$(TargetFramework)'=='netcoreapp3.1'">
-    <DefineConstants>$(DefineConstants);CORE2PLUS</DefineConstants>
-  </PropertyGroup>
-
-	<PropertyGroup Condition="'$(TargetFramework)'=='netstandard1.4'">
-		<DefineConstants>$(DefineConstants);CORE14;NO_SSL</DefineConstants>
-	</PropertyGroup>
-
-	<PropertyGroup Condition="'$(TargetFramework)'=='netstandard1.6'">
-		<DefineConstants>$(DefineConstants);CORE16</DefineConstants>
-	</PropertyGroup>
-
-  <PropertyGroup Condition="'$(TargetFramework)'=='net45' Or '$(TargetFramework)'=='net50' Or $(DefineConstants.Contains('CORE'))">
-    <DefineConstants>$(DefineConstants);ASYNC</DefineConstants>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(TargetFramework)'=='net45' Or '$(TargetFramework)'=='net50'">
-    <DefineConstants>$(DefineConstants);NET45</DefineConstants>
-  </PropertyGroup>
-
   <PropertyGroup Condition="'$(TargetFramework)'=='net50'">
-    <DefineConstants>$(DefineConstants);NET50;CORE</DefineConstants>
+    <DefineConstants>$(DefineConstants);NET50;CORE;ASYNC</DefineConstants>
   </PropertyGroup>
-
-  <!--
-  Required only for GetListingAsyncEnumerable
-  
-  <PropertyGroup Condition="'$(TargetFramework)'=='netstandard2.0' Or '$(TargetFramework)'=='netstandard2.1' Or '$(TargetFramework)'=='net50'">
-    <DefineConstants>$(DefineConstants);ASYNCPLUS</DefineConstants>
-    <LangVersion>8.0</LangVersion>
-  </PropertyGroup>
-  -->
 
   <PropertyGroup>
     <PackageId>FluentFTP</PackageId>
@@ -70,36 +28,6 @@
   <PropertyGroup Condition="'$(Configuration)'=='Release'">
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
   </PropertyGroup>
-
-  <ItemGroup Condition="$(DefineConstants.Contains('NETFX'))">
-    <Reference Include="System.Web" />
-  </ItemGroup>
-
-  <!-- <ItemGroup Condition="$(DefineConstants.Contains('CORE'))">
-    <PackageReference Include="System.Console" Version="4.3.0.0" />
-    <PackageReference Include="System.IO" Version="4.3.0.0" />
-    <PackageReference Include="System.Net.NameResolution" Version="4.3.0.0" />
-    <PackageReference Include="System.Net.Sockets" Version="4.3.0.0" />
-    <PackageReference Include="System.Runtime" Version="4.3.0.0" />
-    <PackageReference Include="System.Threading.Tasks" Version="4.3.0.0" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(TargetFramework)'=='netstandard1.6' Or '$(TargetFramework)'=='netstandard2.0' Or '$(TargetFramework)'=='netstandard2.1' Or '$(TargetFramework)'=='netcoreapp3.1'">
-    <PackageReference Include="System.Net.Security" Version="4.3.2.0" />
-    <PackageReference Include="System.Threading.Thread" Version="4.3.0.0" />
-  </ItemGroup> -->
-
-  <!--
-  Required only for GetListingAsyncEnumerable
-  
-  <ItemGroup Condition="$(DefineConstants.Contains('ASYNCPLUS')) And '$(TargetFramework)'=='netstandard2.0'">
-    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="5.0.0" />
-  </ItemGroup>
-
-  <ItemGroup Condition="$(DefineConstants.Contains('ASYNCPLUS'))">
-    <PackageReference Include="System.Linq.Async" Version="5.0.0" />
-  </ItemGroup>
-  -->
 
   <ItemGroup>
     <None Include="..\.github\logo-nuget.png">

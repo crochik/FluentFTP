@@ -3,6 +3,7 @@
   <PropertyGroup>
     <TargetFrameworks>net50</TargetFrameworks>
     <TargetFramework>net50</TargetFramework>
+    <NoWarn>1591</NoWarn>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(TargetFramework)'=='net50'">

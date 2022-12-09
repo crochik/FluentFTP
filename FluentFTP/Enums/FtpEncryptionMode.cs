@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace FluentFTP {
+﻿namespace FluentFTP {
 	/// <summary>
 	/// Defines the type of encryption to use
 	/// </summary>

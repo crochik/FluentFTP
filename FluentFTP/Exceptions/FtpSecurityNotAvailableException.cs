@@ -1,5 +1,4 @@
-﻿using System;
-#if !CORE
+﻿#if !CORE
 using System.Runtime.Serialization;
 #endif
 

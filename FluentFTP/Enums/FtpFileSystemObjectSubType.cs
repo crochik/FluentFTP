@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace FluentFTP {
+﻿namespace FluentFTP {
 	/// <summary>
 	/// Type of file system of object
 	/// </summary>

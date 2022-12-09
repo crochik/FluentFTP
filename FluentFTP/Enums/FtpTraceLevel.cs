@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace FluentFTP {
+﻿namespace FluentFTP {
 	/// <summary>
 	/// Defines the level of the tracing message.  Depending on the framework version this is translated
 	/// to an equivalent logging level in System.Diagnostices (if available)

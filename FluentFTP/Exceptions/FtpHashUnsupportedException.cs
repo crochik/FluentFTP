@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using FluentFTP.Helpers.Hashing;
+﻿using FluentFTP.Helpers.Hashing;
 #if !CORE
 using System.Runtime.Serialization;
 #endif

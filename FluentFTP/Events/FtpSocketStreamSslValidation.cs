@@ -1,15 +1,4 @@
-﻿using System;
-using System.IO;
-using System.Net.Sockets;
-using System.Net.Security;
-using System.Security.Authentication;
-using System.Security.Cryptography.X509Certificates;
-using System.Threading;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Net;
-
-#if NET45
+﻿#if NET45
 using System.Threading.Tasks;
 
 #endif

@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace FluentFTP {
+﻿namespace FluentFTP {
 	/// <summary>
 	/// Defines the operating system of the FTP server.
 	/// </summary>

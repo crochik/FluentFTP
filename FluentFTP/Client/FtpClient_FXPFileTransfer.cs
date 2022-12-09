@@ -5,7 +5,6 @@ using System.Web;
 #endif
 #if (CORE || NETFX)
 using System.Threading;
-using FluentFTP.Rules;
 #endif
 #if (CORE || NET45)
 using System.Threading.Tasks;

@@ -1,14 +1,4 @@
-﻿using System;
-using System.Collections;
-using System.IO;
-using System.Collections.Generic;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Globalization;
-using System.Net.Sockets;
-using FluentFTP.Servers;
-#if (CORE || NETFX)
-using System.Diagnostics;
+﻿#if (CORE || NETFX)
 #endif
 #if NET45
 using System.Threading.Tasks;

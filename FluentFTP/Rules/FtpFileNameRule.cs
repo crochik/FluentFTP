@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using FluentFTP.Helpers;
+﻿using System.Collections.Generic;
 
 namespace FluentFTP.Rules {
 

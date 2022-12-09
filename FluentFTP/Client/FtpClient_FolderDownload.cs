@@ -9,7 +9,6 @@ using System.Threading;
 #if (CORE || NET45)
 using System.Threading.Tasks;
 #endif
-using System.Linq;
 
 namespace FluentFTP {
 	public partial class FtpClient : IDisposable {

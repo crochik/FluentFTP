@@ -5,10 +5,8 @@ using System.Security.Authentication;
 using FluentFTP.Servers.Handlers;
 using FluentFTP.Helpers;
 #if (CORE || NETFX)
-using System.Threading;
 #endif
 #if ASYNC
-using System.Threading.Tasks;
 #endif
 
 namespace FluentFTP.Servers {

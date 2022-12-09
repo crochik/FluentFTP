@@ -7,10 +7,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Net;
-using System.Net.NetworkInformation;
-
 using FluentFTP.Helpers;
 using FluentFTP.Exceptions;
 #if CORE || NET45

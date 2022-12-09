@@ -1,10 +1,4 @@
-﻿using System;
-using System.Text.RegularExpressions;
-using System.Collections.Generic;
-using System.Security.Authentication;
-using FluentFTP;
-using FluentFTP.Servers;
-#if (CORE || NETFX)
+﻿#if (CORE || NETFX)
 using System.Threading;
 #endif
 #if ASYNC

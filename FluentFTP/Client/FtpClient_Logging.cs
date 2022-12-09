@@ -1,26 +1,12 @@
 ﻿using System;
-using System.IO;
-using System.Net.Sockets;
-using System.Text;
-using System.Reflection;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Diagnostics;
-using System.Linq;
-using System.Net;
-using FluentFTP.Proxy;
-using FluentFTP.Servers;
-using FluentFTP.Rules;
 using FluentFTP.Helpers;
 using SysSslProtocols = System.Security.Authentication.SslProtocols;
 #if !CORE
 using System.Web;
 #endif
 #if (CORE || NETFX)
-using System.Threading;
 #endif
 #if ASYNC
-using System.Threading.Tasks;
 
 #endif
 

@@ -1,7 +1,6 @@
 ﻿using System;
 using System.IO;
 using System.Threading;
-using FluentFTP;
 
 #if ASYNC
 using System.Threading.Tasks;

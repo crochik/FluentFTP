@@ -1,5 +1,4 @@
-﻿using System;
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 
 namespace FluentFTP.Helpers.Hashing {
 	internal class CRC32 : HashAlgorithm {

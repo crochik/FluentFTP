@@ -1,14 +1,7 @@
-﻿using System;
-using System.Text.RegularExpressions;
-using System.Collections.Generic;
-using System.Security.Authentication;
-using FluentFTP;
-using FluentFTP.Servers;
+﻿using System.Text.RegularExpressions;
 #if (CORE || NETFX)
-using System.Threading;
 #endif
 #if ASYNC
-using System.Threading.Tasks;
 #endif
 
 namespace FluentFTP.Servers.Handlers {

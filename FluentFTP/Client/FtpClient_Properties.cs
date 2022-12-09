@@ -7,7 +7,6 @@ using System.Globalization;
 using System.Security.Authentication;
 using System.Net;
 using FluentFTP.Servers;
-using FluentFTP.Helpers;
 
 namespace FluentFTP {
 	public partial class FtpClient : IDisposable {

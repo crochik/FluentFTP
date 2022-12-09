@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace FluentFTP {
+﻿namespace FluentFTP {
 	/// <summary>
 	/// Data connection type
 	/// </summary>

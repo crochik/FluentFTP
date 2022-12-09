@@ -1,6 +1,5 @@
 ﻿using System;
 using FluentFTP.Streams;
-using FluentFTP.Rules;
 using FluentFTP.Helpers;
 using System.IO;
 #if !CORE

@@ -1,5 +1,4 @@
-﻿using System.Net;
-using FluentFTP.Proxy.Socks;
+﻿using FluentFTP.Proxy.Socks;
 #if ASYNC
 
 using System.Threading;

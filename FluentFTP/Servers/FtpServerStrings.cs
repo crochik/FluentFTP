@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace FluentFTP.Servers {
+﻿namespace FluentFTP.Servers {
 	internal static class FtpServerStrings {
 
 		#region File Exists

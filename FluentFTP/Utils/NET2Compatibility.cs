@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-#region Extension Methods for .NET 2
+﻿#region Extension Methods for .NET 2
 
 #if NET20
 

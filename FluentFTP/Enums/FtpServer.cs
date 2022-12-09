@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace FluentFTP {
+﻿namespace FluentFTP {
 	/// <summary>
 	/// Defines the type of the FTP server software.
 	/// Add constants here as you add detection scripts for individual server types.

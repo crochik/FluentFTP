@@ -1,6 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-#if (CORE || NETFX)
+﻿#if (CORE || NETFX)
 using System.Threading;
 #endif
 #if ASYNC

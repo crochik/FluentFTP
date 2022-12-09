@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-#if !CORE
+﻿#if !CORE
 using System.Reflection;
 using System.Linq;
 

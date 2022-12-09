@@ -10,7 +10,6 @@ using System.Threading;
 #if ASYNC
 using System.Threading.Tasks;
 #endif
-using System.Linq;
 
 namespace FluentFTP {
 	public partial class FtpClient : IFtpClient, IDisposable {

@@ -1,7 +1,4 @@
 ﻿using System;
-using System.Reflection;
-using System.Text.RegularExpressions;
-using System.Diagnostics;
 using System.Threading;
 
 #if ASYNC

@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-#if !CORE
+﻿#if !CORE
 using System.Linq;
 using System.Net.Security;
 using System.Runtime.ConstrainedExecution;

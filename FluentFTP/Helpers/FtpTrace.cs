@@ -1,8 +1,10 @@
 ﻿#define TRACE
+using System;
 using System.Diagnostics;
+using System.IO;
 
 namespace FluentFTP.Helpers {
-	/// <summary>
+	/// <summary>`
 	/// Used for transaction logging and debug information.
 	/// </summary>
 	public static class FtpTrace {
